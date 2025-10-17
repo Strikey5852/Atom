@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 import aiohttp
 
 class Cats(commands.Cog):
@@ -12,10 +13,13 @@ class Cats(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        # avoid adding/starting multiple times
-        if not self.scheduler.get_job("post_cat_pic"):
-            self.scheduler.add_job(self.post_cat_pic, "interval", hours=1, id="cat_pic")
         if not self.scheduler.running:
+            # Schedule to run at the start of every hour IST
+            self.scheduler.add_job(
+                self.post_cat_pic,
+                CronTrigger(minute=0, timezone="Asia/Kolkata"),
+                id="post_cat_pic"
+            )
             self.scheduler.start()
             print("Cats scheduler started.")
 
@@ -37,7 +41,7 @@ class Cats(commands.Cog):
                     )
                     embed.set_image(url=image_url)
                     await channel.send(embed=embed)
-                    
+
     @app_commands.command(name="cat", description="Sends a random cat picture on demand")
     async def cat(self, interaction: discord.Interaction):
         async with aiohttp.ClientSession() as session:
@@ -51,10 +55,11 @@ class Cats(commands.Cog):
                         color=discord.Color.from_str("#00FFFF")
                     )
                     embed.set_image(url=image_url)
-
                     await interaction.response.send_message(embed=embed)
                 else:
-                    await interaction.response.send_message("Couldn’t fetch a cat pic right now ;-;", ephemeral=True)
+                    await interaction.response.send_message(
+                        "Couldn’t fetch a cat pic right now ;-;", ephemeral=True
+                    )
 
 async def setup(bot):
     await bot.add_cog(Cats(bot))
