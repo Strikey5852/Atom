@@ -50,21 +50,17 @@ class QOTD(commands.Cog):
         except Exception:
             return {}
 
-        # Normalize older formats where a guild key might map directly to a list
+        # Ensure all guild data has the expected structure
         normalized = {}
         for gk, val in data.items():
-            if isinstance(val, list):
-                normalized[gk] = {"questions": val, "channel_id": None, "warning_channel_id": None}
-            elif isinstance(val, dict):
-                # ensure expected keys
-                normalized[gk] = {
-                    "questions": val.get("questions", []) if isinstance(val.get("questions", []), list) else [],
-                    "channel_id": val.get("channel_id"),
-                    "warning_channel_id": val.get("warning_channel_id"),
-                }
-            else:
-                # unknown type, skip
-                normalized[gk] = {"questions": [], "channel_id": None, "warning_channel_id": None}
+            # Get existing data or create new with default values
+            guild_data = val if isinstance(val, dict) else {}
+            normalized[gk] = {
+                "questions": guild_data.get("questions", []),
+                "channel_id": guild_data.get("channel_id"),
+                "warning_channel_id": guild_data.get("warning_channel_id"),
+                "ping_role_id": guild_data.get("ping_role_id")
+            }
 
         return normalized
 
@@ -176,7 +172,17 @@ class QOTD(commands.Cog):
         channel = self.bot.get_channel(ch_id)
         if channel:
             try:
-                await channel.send(question)
+                # Get ping role if configured
+                ping_text = ""
+                ping_role_id = guild_data.get("ping_role_id")
+                if ping_role_id:
+                    guild = channel.guild
+                    role = guild.get_role(ping_role_id)
+                    if role:
+                        ping_text = f"{role.mention}\n"
+                
+                # Send the question with optional ping
+                await channel.send(f"{ping_text}{question}")
             except Exception:
                 pass
 
@@ -306,6 +312,32 @@ class QOTD(commands.Cog):
         self.save_all_guild_questions(settings)
         await ctx.send(f"QOTD warning channel set to {channel.mention}")
 
+    @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
+    @commands.has_permissions(administrator=True)
+    async def set_qotd_ping(self, ctx, role: discord.Role):
+        """Set the role to ping for QOTD announcements in this server.
+        
+        Args:
+            role: The role to ping with each QOTD
+        """
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+
+        # Save the ping role setting for this guild
+        settings = self.load_all_guild_questions()
+        guild_data = settings.setdefault(str(ctx.guild.id), {
+            "questions": [],
+            "channel_id": None,
+            "warning_channel_id": None,
+            "ping_role_id": None
+        })
+        guild_data["ping_role_id"] = role.id
+        settings[str(ctx.guild.id)] = guild_data
+        self.save_all_guild_questions(settings)
+        
+        await ctx.send(f"QOTD will now ping {role.mention}")
+
     @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
     @commands.has_permissions(administrator=True)
     async def qotd_settings(self, ctx):
@@ -317,6 +349,7 @@ class QOTD(commands.Cog):
         guild_setting = settings.get(guild_id, {})
         ch = guild_setting.get("channel_id")
         warn = guild_setting.get("warning_channel_id")
+        ping_role = guild_setting.get("ping_role_id")
         parts = []
         if ch:
             channel = self.bot.get_channel(ch)
@@ -328,6 +361,11 @@ class QOTD(commands.Cog):
             parts.append(f"Warning channel: {wchannel.mention if wchannel else str(warn)}")
         else:
             parts.append("Warning channel: Not set")
+        if ping_role:
+            role = ctx.guild.get_role(ping_role)
+            parts.append(f"Ping role: {role.mention if role else str(ping_role)}")
+        else:
+            parts.append("Ping role: Not set")
         await ctx.send("\n".join(parts))
 
 async def setup(bot):
