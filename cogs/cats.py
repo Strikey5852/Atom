@@ -12,7 +12,7 @@ class Cats(commands.Cog):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
         # Decide where to store JSON files. Use Railway persistent volume if available.
-        if "RAILWAY" in os.environ:
+        if os.path.exists("/data"):
             print('yay')
             DATA_DIR = "/data"
         else:
