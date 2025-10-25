@@ -13,9 +13,11 @@ class Cats(commands.Cog):
         self.scheduler = AsyncIOScheduler()
         # Decide where to store JSON files. Use Railway persistent volume if available.
         if "RAILWAY" in os.environ:
+            print('yay')
             DATA_DIR = "/data"
         else:
             DATA_DIR = "data"
+            print('nay')
 
         self.cats_json_path = f"{DATA_DIR}/cats.json"  # Stores per-guild channel settings
 
