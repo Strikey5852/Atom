@@ -8,7 +8,7 @@ import asyncio
 # Main bot entrypoint
 bot = commands.Bot(
     command_prefix=">",  # Prefix for non-slash (text) commands
-    intents=discord.Intents.all()  # Request all intents (modify if you need fewer)
+    intents=discord.Intents.all()
 )
 
 @bot.event
