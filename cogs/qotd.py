@@ -1,119 +1,328 @@
 import os
+import json
 import random
 import discord
 from discord.ext import commands
-from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 class QOTD(commands.Cog):
     def __init__(self, bot):
+        """Initialize the QOTD cog.
+        
+        Args:
+            bot: The Discord bot instance
+        """
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
-        self.file_path = "data/qotd.txt"
-        self.channel_id = 1073447676307320963
-        self.warning_channel_id = 1019974638652112967
+        self.qotd_json_path = "data/qotd.json"  # Stores per-guild questions and settings
 
     # --------------------------------
-    # Utility functions
+    # Storage Management
     # --------------------------------
-    def read_questions(self):
-        """Read all questions from file."""
-        if not os.path.exists(self.file_path):
-            open(self.file_path, "w").close()
-        with open(self.file_path, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
+    def _ensure_qotd_json(self):
+        """Initialize the JSON storage file if it doesn't exist.
+        Creates an empty dictionary for guild data storage."""
+        os.makedirs(os.path.dirname(self.qotd_json_path), exist_ok=True)
+        if not os.path.exists(self.qotd_json_path):
+            with open(self.qotd_json_path, "w", encoding="utf-8") as jf:
+                json.dump({}, jf)
 
-    def write_questions(self, questions):
-        """Overwrite the file with given questions."""
-        with open(self.file_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(questions) + ("\n" if questions else ""))
+    def load_all_guild_questions(self) -> dict:
+        """Load and return the guild data from storage.
+        
+        Returns:
+            dict: Mapping of guild_id (str) to guild data dictionary containing:
+                - questions: list of question strings
+                - channel_id: ID of QOTD channel (int or None)
+                - warning_channel_id: ID of warning channel (int or None)
+        """
+        self._ensure_qotd_json()
+        try:
+            with open(self.qotd_json_path, "r", encoding="utf-8") as jf:
+                data = json.load(jf) or {}
+        except Exception:
+            return {}
 
-    async def send_warning(self, message: str):
-        """Send a warning message to the configured warning channel."""
-        warning_channel = self.bot.get_channel(self.warning_channel_id)
-        if warning_channel:
-            await warning_channel.send(f"{message}")
-        else:
-            print("Warning channel not found!")
+        # Normalize older formats where a guild key might map directly to a list
+        normalized = {}
+        for gk, val in data.items():
+            if isinstance(val, list):
+                normalized[gk] = {"questions": val, "channel_id": None, "warning_channel_id": None}
+            elif isinstance(val, dict):
+                # ensure expected keys
+                normalized[gk] = {
+                    "questions": val.get("questions", []) if isinstance(val.get("questions", []), list) else [],
+                    "channel_id": val.get("channel_id"),
+                    "warning_channel_id": val.get("warning_channel_id"),
+                }
+            else:
+                # unknown type, skip
+                normalized[gk] = {"questions": [], "channel_id": None, "warning_channel_id": None}
+
+        return normalized
+
+    def save_all_guild_questions(self, data: dict):
+        os.makedirs(os.path.dirname(self.qotd_json_path), exist_ok=True)
+        with open(self.qotd_json_path, "w", encoding="utf-8") as jf:
+            json.dump(data, jf, indent=2)
+
+    def get_questions_for_guild(self, guild_id: int) -> list:
+        """Get the list of questions for a specific guild.
+        
+        Args:
+            guild_id: The Discord guild ID
+            
+        Returns:
+            list: List of questions for the guild, or empty list if none exist
+        """
+        data = self.load_all_guild_questions()
+        g = data.get(str(guild_id))
+        if not g:
+            return []
+        return g.get("questions", [])
+
+    def set_questions_for_guild(self, guild_id: int, questions: list):
+        """Update the question list for a specific guild.
+        
+        Args:
+            guild_id: The Discord guild ID
+            questions: List of question strings to store
+        """
+        data = self.load_all_guild_questions()
+        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g["questions"] = questions
+        data[str(guild_id)] = g
+        self.save_all_guild_questions(data)
+
+    def set_channel_for_guild(self, guild_id: int, channel_id: int):
+        """Set the QOTD channel for a specific guild.
+        
+        Args:
+            guild_id: The Discord guild ID
+            channel_id: The ID of the channel where QOTD will be posted
+        """
+        data = self.load_all_guild_questions()
+        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g["channel_id"] = channel_id
+        data[str(guild_id)] = g
+        self.save_all_guild_questions(data)
+
+    def set_warning_channel_for_guild(self, guild_id: int, channel_id: int):
+        data = self.load_all_guild_questions()
+        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g["warning_channel_id"] = channel_id
+        data[str(guild_id)] = g
+        self.save_all_guild_questions(data)
+
+    def get_guild_settings(self, guild_id: int):
+        data = self.load_all_guild_questions()
+        return data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+
+    async def send_warning(self, guild_id: int, message: str):
+        """Send a warning message to the configured warning channel.
+        
+        Args:
+            guild_id: The ID of the guild to send the warning to
+            message: The warning message to send
+        """
+        data = self.load_all_guild_questions()
+        guild_data = data.get(str(guild_id), {})
+        warn_id = guild_data.get("warning_channel_id")
+        
+        if warn_id:
+            warning_channel = self.bot.get_channel(warn_id)
+            if warning_channel:
+                try:
+                    await warning_channel.send(message)
+                except Exception:
+                    pass
 
     # --------------------------------
-    # Main QOTD logic
+    # Question Sending Logic
     # --------------------------------
-    async def send_question(self):
-        """Send a random question to the QOTD channel."""
-        channel = self.bot.get_channel(self.channel_id)
-        if not channel:
-            print("QOTD channel not found!")
+    async def send_question(self, guild_id: int):
+        """Pick and send a random question for a specific guild.
+        
+        Selects a random question from the guild's list, removes it,
+        sends it to the guild's configured QOTD channel, and sends
+        warnings to the guild's warning channel if question count is low.
+        
+        Args:
+            guild_id: The Discord guild ID to send a question for
+        """
+        data = self.load_all_guild_questions()
+        gk = str(guild_id)
+        guild_data = data.get(gk, {})
+        questions = guild_data.get("questions", [])
+        ch_id = guild_data.get("channel_id")
+
+        if not questions or not ch_id:
             return
 
-        questions = self.read_questions()
-
+        # Pick and remove a random question
         question = random.choice(questions)
-        await channel.send(f"<@&1073455091241193524> {question}")
-
-        # Remove asked question from the 
         questions.remove(question)
-        self.write_questions(questions)
+        guild_data["questions"] = questions
+        data[gk] = guild_data
 
-        questions = self.read_questions()
-        count = len(questions)
+        # Try to send to the guild's channel
+        channel = self.bot.get_channel(ch_id)
+        if channel:
+            try:
+                await channel.send(question)
+            except Exception:
+                pass
 
-        if count == 0:
-            await self.send_warning("No more questions left in the list! Add some with `/addqotd`.")
-            return
+        # Send warnings to this guild if their question count is low
+        warn_id = guild_data.get("warning_channel_id")
+        if warn_id:
+            warn_channel = self.bot.get_channel(warn_id)
+            if warn_channel:
+                if len(questions) == 0:
+                    await warn_channel.send("No more questions left in this server's list! Add some with `/addqotd`.")
+                elif len(questions) == 1:
+                    await warn_channel.send("Only **1 question** remaining in this server's list!")
 
-        if count == 1:
-            await self.send_warning("Only **1 question** remaining in the QOTD list!")
+        # Save changes
+        self.save_all_guild_questions(data)
 
     # --------------------------------
-    # Startup and scheduler
+    # Scheduler Setup
     # --------------------------------
+    async def _scheduled_send_questions(self):
+        """Send questions to all guilds the bot is in.
+        
+        Called by the scheduler at the configured time to send
+        one question to each guild the bot is currently in."""
+        for guild in self.bot.guilds:
+            await self.send_question(guild.id)
+
     @commands.Cog.listener()
     async def on_ready(self):
         if not self.scheduler.running:
             # Schedule every day at 08:00 PM IST
             self.scheduler.add_job(
-                self.send_question,
+                self._scheduled_send_questions,
                 CronTrigger(hour=20, minute=00, timezone="Asia/Kolkata"),
             )
             self.scheduler.start()
             print("QOTD scheduler started")
 
     # --------------------------------
-    # Slash commands
+    # Question Management Commands
     # --------------------------------
-    @app_commands.command(name="addqotd", description="Add a new question to the QOTD list")
-    async def add_qotd(self, interaction: discord.Interaction, question: str):
-        questions = self.read_questions()
+    @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
+    @commands.has_permissions(administrator=True)
+    async def add_qotd(self, ctx, *, question: str):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        gid = ctx.guild.id
+        questions = self.get_questions_for_guild(gid)
         questions.append(question.strip())
-        self.write_questions(questions)
-        await interaction.response.send_message(f"Added question: `{question}`", ephemeral=False)
+        self.set_questions_for_guild(gid, questions)
+        await ctx.send(f"Added question to this server: `{question}`")
 
-    @app_commands.command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
-    async def remove_qotd(self, interaction: discord.Interaction, number: int):
-        questions = self.read_questions()
+    @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
+    @commands.has_permissions(administrator=True)
+    async def remove_qotd(self, ctx, number: int):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        gid = ctx.guild.id
+        questions = self.get_questions_for_guild(gid)
         if number < 1 or number > len(questions):
-            await interaction.response.send_message("Invalid question number.", ephemeral=False)
+            await ctx.send("Invalid question number.")
             return
         removed_question = questions.pop(number - 1)
-        self.write_questions(questions)
-        await interaction.response.send_message(f"Removed question #{number}: `{removed_question}`", ephemeral=False)
+        self.set_questions_for_guild(gid, questions)
+        await ctx.send(f"Removed question #{number}: `{removed_question}` from this server")
 
-    @app_commands.command(name="listqotd", description="Show all current questions")
-    async def list_qotd(self, interaction: discord.Interaction):
-        questions = self.read_questions()
+    @commands.hybrid_command(name="listqotd", description="Show all current questions")
+    @commands.has_permissions(administrator=True)
+    async def list_qotd(self, ctx):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        gid = ctx.guild.id
+        questions = self.get_questions_for_guild(gid)
         if not questions:
-            await interaction.response.send_message("No questions in the list.", ephemeral=False)
+            await ctx.send("No questions in the list for this server.")
             return
 
         display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
-        await interaction.response.send_message(f"**Current Questions:**\n{display}", ephemeral=False)
+        await ctx.send(f"**Current Questions for this server:**\n{display}")
 
-    @app_commands.command(name="qotdnow", description="Manually post a random question now")
-    async def qotd_now(self, interaction: discord.Interaction):
-        await self.send_question()
-        await interaction.response.send_message("Sent a question manually!", ephemeral=True)
+    @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
+    @commands.has_permissions(administrator=True)
+    async def qotd_now(self, ctx):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        
+        await self.send_question(ctx.guild.id)
+        # try to send ephemeral reply if this was an interaction
+        interaction = getattr(ctx, "interaction", None)
+        if interaction is not None:
+            try:
+                await interaction.response.send_message("Sent a question manually!", ephemeral=True)
+                return
+            except Exception:
+                pass
+
+        await ctx.send("Sent a question manually!")
+
+    # --------------------------------
+    # Channel Configuration Commands
+    # --------------------------------
+    @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
+    @commands.has_permissions(administrator=True)
+    async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        guild_id = str(ctx.guild.id)
+        settings = self.load_all_guild_questions()
+        settings.setdefault(guild_id, {})["channel_id"] = channel.id
+        self.save_all_guild_questions(settings)
+        await ctx.send(f"QOTD channel set to {channel.mention}")
+
+    @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
+    @commands.has_permissions(administrator=True)
+    async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        guild_id = str(ctx.guild.id)
+        settings = self.load_all_guild_questions()
+        settings.setdefault(guild_id, {})["warning_channel_id"] = channel.id
+        self.save_all_guild_questions(settings)
+        await ctx.send(f"QOTD warning channel set to {channel.mention}")
+
+    @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
+    @commands.has_permissions(administrator=True)
+    async def qotd_settings(self, ctx):
+        if ctx.guild is None:
+            await ctx.send("This command must be used in a server (guild).")
+            return
+        guild_id = str(ctx.guild.id)
+        settings = self.load_all_guild_questions()
+        guild_setting = settings.get(guild_id, {})
+        ch = guild_setting.get("channel_id")
+        warn = guild_setting.get("warning_channel_id")
+        parts = []
+        if ch:
+            channel = self.bot.get_channel(ch)
+            parts.append(f"QOTD channel: {channel.mention if channel else str(ch)}")
+        else:
+            parts.append("QOTD channel: Not set")
+        if warn:
+            wchannel = self.bot.get_channel(warn)
+            parts.append(f"Warning channel: {wchannel.mention if wchannel else str(warn)}")
+        else:
+            parts.append("Warning channel: Not set")
+        await ctx.send("\n".join(parts))
 
 async def setup(bot):
     await bot.add_cog(QOTD(bot))
