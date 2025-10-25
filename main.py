@@ -4,9 +4,11 @@ import os
 import time
 import asyncio
 
+
+# Main bot entrypoint
 bot = commands.Bot(
-    command_prefix=">",
-    intents=discord.Intents.all()
+    command_prefix=">",  # Prefix for non-slash (text) commands
+    intents=discord.Intents.all()  # Request all intents (modify if you need fewer)
 )
 
 @bot.event
@@ -19,6 +21,7 @@ async def on_ready():
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
+    # Slash command to report latency
     start = time.perf_counter()
     await interaction.response.send_message("Pinging...")
     end = time.perf_counter()
@@ -42,6 +45,8 @@ async def load_cogs(bot):
 async def main():
     await load_cogs(bot)
     TOKEN = os.getenv("TOKEN")
+    if not TOKEN:
+        raise RuntimeError("TOKEN environment variable is not set")
     await bot.start(TOKEN)
 
 asyncio.run(main())
