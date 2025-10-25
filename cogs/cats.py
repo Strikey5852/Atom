@@ -11,7 +11,13 @@ class Cats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
-        self.cats_json_path = "data/cats.json"  # Stores per-guild channel settings
+        # Decide where to store JSON files. Use Railway persistent volume if available.
+        if "RAILWAY" in os.environ:
+            DATA_DIR = "/data"
+        else:
+            DATA_DIR = "data"
+
+        self.cats_json_path = f"{DATA_DIR}/cats.json"  # Stores per-guild channel settings
 
     def _ensure_cats_json(self):
         """Initialize the JSON storage file if it doesn't exist."""

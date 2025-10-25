@@ -15,7 +15,13 @@ class QOTD(commands.Cog):
         """
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
-        self.qotd_json_path = "data/qotd.json"  # Stores per-guild questions and settings
+        # Decide where to store JSON files. Use Railway persistent volume if available.
+        if "RAILWAY" in os.environ:
+            DATA_DIR = "/data"
+        else:
+            DATA_DIR = "data"
+
+        self.qotd_json_path = f"{DATA_DIR}/qotd.json"  # Stores per-guild questions and settings
 
     # --------------------------------
     # Storage Management
