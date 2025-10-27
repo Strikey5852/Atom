@@ -179,7 +179,7 @@ class QOTD(commands.Cog):
                     guild = channel.guild
                     role = guild.get_role(ping_role_id)
                     if role:
-                        ping_text = f"{role.mention}\n"
+                        ping_text = f"{role.mention}"
                 
                 # Send the question with optional ping
                 await channel.send(f"{ping_text}{question}")

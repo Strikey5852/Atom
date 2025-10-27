@@ -16,8 +16,13 @@ async def on_ready():
     print(f"Logged in as {bot.user}")
     
     # Sync commands after bot is ready
-    synced = await bot.tree.sync()
-    print(f"Synced {len(synced)} commands")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} commands")
+        # Print out the names of synced commands for verification
+        print("Synced command names:", [cmd.name for cmd in synced])
+    except Exception as e:
+        print(f"Error syncing commands: {e}")
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
