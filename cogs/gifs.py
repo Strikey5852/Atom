@@ -83,7 +83,7 @@ class Gifs(commands.Cog):
         elif member is None and action in TARGET_ACTIONS:
             content = (ACTIONS[action].format(actor="", target="you")).capitalize()  
         else:
-            target = member.mention
+            target = member.display_name
             content = ACTIONS[action].format(actor=actor, target=target)
 
         embed = discord.Embed(
