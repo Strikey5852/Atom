@@ -3,6 +3,7 @@ import json
 import random
 import discord
 from discord.ext import commands
+from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -226,6 +227,9 @@ class QOTD(commands.Cog):
     # --------------------------------
     @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+    question="Question text to add to the QOTD list"
+    )
     async def add_qotd(self, ctx, *, question: str):
         if ctx.guild is None:
             await ctx.send("This command must be used in a server (guild).")
@@ -238,6 +242,9 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+    number="The question number to remove (from /listqotd)"
+    )
     async def remove_qotd(self, ctx, number: int):
         if ctx.guild is None:
             await ctx.send("This command must be used in a server (guild).")
@@ -290,6 +297,9 @@ class QOTD(commands.Cog):
     # --------------------------------
     @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+    channel="The text channel for QOTD postings"
+    )
     async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
         if ctx.guild is None:
             await ctx.send("This command must be used in a server (guild).")
@@ -302,6 +312,9 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+    channel="The text channel for QOTD warnings"
+    )
     async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
         if ctx.guild is None:
             await ctx.send("This command must be used in a server (guild).")
@@ -314,6 +327,9 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+    role="The role to ping with each QOTD"
+    )
     async def set_qotd_ping(self, ctx, role: discord.Role):
         """Set the role to ping for QOTD announcements in this server.
         

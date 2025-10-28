@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import aiohttp
@@ -116,6 +117,9 @@ class Cats(commands.Cog):
 
     @commands.hybrid_command(name="setcatchannel", description="Set the channel where hourly cat pictures will be posted")
     @commands.has_permissions(administrator=True)
+    @app_commands.describe(
+        channel="The text channel to post hourly cat pictures in"
+    )    
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
         """Set the channel for hourly cat pictures in this server."""
         if ctx.guild is None:
