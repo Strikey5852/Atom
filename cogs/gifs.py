@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
-import random
 
 # Actions that require a target
 TARGET_ACTIONS = {

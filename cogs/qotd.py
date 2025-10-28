@@ -182,7 +182,7 @@ class QOTD(commands.Cog):
                         ping_text = f"{role.mention}"
                 
                 # Send the question with optional ping
-                await channel.send(f"{ping_text}{question}")
+                await channel.send(f"{ping_text} {question}")
             except Exception:
                 pass
 
