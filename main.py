@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import os
 import time
 import asyncio
@@ -25,6 +26,8 @@ async def on_ready():
         print(f"Error syncing commands: {e}")
 
 @bot.tree.command(name="ping", description="Check bot latency")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 async def ping(interaction: discord.Interaction):
     # Slash command to report latency
     start = time.perf_counter()

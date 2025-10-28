@@ -88,6 +88,8 @@ class Cats(commands.Cog):
                                 pass  # Skip if can't send to this channel
 
     @commands.hybrid_command(name="cat", description="Sends a random cat picture on demand")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def cat(self, ctx):
         async with aiohttp.ClientSession() as session:
             async with session.get("https://api.thecatapi.com/v1/images/search") as resp:
@@ -117,15 +119,10 @@ class Cats(commands.Cog):
 
     @commands.hybrid_command(name="setcatchannel", description="Set the channel where hourly cat pictures will be posted")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-        channel="The text channel to post hourly cat pictures in"
-    )    
+    @commands.guild_only()
+    @app_commands.describe(channel="The text channel to post hourly cat pictures in")    
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
         """Set the channel for hourly cat pictures in this server."""
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server.")
-            return
-
         # Save the channel setting for this guild
         settings = self.load_settings()
         settings[str(ctx.guild.id)] = {"channel_id": channel.id}
@@ -135,12 +132,9 @@ class Cats(commands.Cog):
 
     @commands.hybrid_command(name="catinfo", description="Show the cat channel settings for this server")
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def cat_info(self, ctx):
         """Show the current cat channel configuration for this server."""
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server.")
-            return
-
         settings = self.load_settings()
         guild_settings = settings.get(str(ctx.guild.id), {})
         channel_id = guild_settings.get("channel_id")

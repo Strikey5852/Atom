@@ -227,13 +227,9 @@ class QOTD(commands.Cog):
     # --------------------------------
     @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-    question="Question text to add to the QOTD list"
-    )
+    @commands.guild_only()
+    @app_commands.describe(question="Question text to add to the QOTD list")
     async def add_qotd(self, ctx, *, question: str):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         gid = ctx.guild.id
         questions = self.get_questions_for_guild(gid)
         questions.append(question.strip())
@@ -242,13 +238,9 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-    number="The question number to remove (from /listqotd)"
-    )
+    @commands.guild_only()
+    @app_commands.describe(number="The question number to remove (from /listqotd)")
     async def remove_qotd(self, ctx, number: int):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         gid = ctx.guild.id
         questions = self.get_questions_for_guild(gid)
         if number < 1 or number > len(questions):
@@ -260,26 +252,20 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="listqotd", description="Show all current questions")
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def list_qotd(self, ctx):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         gid = ctx.guild.id
         questions = self.get_questions_for_guild(gid)
         if not questions:
             await ctx.send("No questions in the list for this server.")
             return
-
         display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
         await ctx.send(f"**Current Questions for this server:**\n{display}")
 
     @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def qotd_now(self, ctx):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
-        
         await self.send_question(ctx.guild.id)
         # try to send ephemeral reply if this was an interaction
         interaction = getattr(ctx, "interaction", None)
@@ -297,13 +283,9 @@ class QOTD(commands.Cog):
     # --------------------------------
     @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-    channel="The text channel for QOTD postings"
-    )
+    @commands.guild_only()
+    @app_commands.describe(channel="The text channel for QOTD postings")
     async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         guild_id = str(ctx.guild.id)
         settings = self.load_all_guild_questions()
         settings.setdefault(guild_id, {})["channel_id"] = channel.id
@@ -312,13 +294,9 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-    channel="The text channel for QOTD warnings"
-    )
+    @commands.guild_only()
+    @app_commands.describe(channel="The text channel for QOTD warnings")
     async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         guild_id = str(ctx.guild.id)
         settings = self.load_all_guild_questions()
         settings.setdefault(guild_id, {})["warning_channel_id"] = channel.id
@@ -327,19 +305,14 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
     @commands.has_permissions(administrator=True)
-    @app_commands.describe(
-    role="The role to ping with each QOTD"
-    )
+    @commands.guild_only()
+    @app_commands.describe(role="The role to ping with each QOTD")
     async def set_qotd_ping(self, ctx, role: discord.Role):
         """Set the role to ping for QOTD announcements in this server.
         
         Args:
             role: The role to ping with each QOTD
         """
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
-
         # Save the ping role setting for this guild
         settings = self.load_all_guild_questions()
         guild_data = settings.setdefault(str(ctx.guild.id), {
@@ -356,10 +329,8 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def qotd_settings(self, ctx):
-        if ctx.guild is None:
-            await ctx.send("This command must be used in a server (guild).")
-            return
         guild_id = str(ctx.guild.id)
         settings = self.load_all_guild_questions()
         guild_setting = settings.get(guild_id, {})
