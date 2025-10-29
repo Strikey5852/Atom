@@ -16,7 +16,6 @@ class QOTD(commands.Cog):
         """
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
-        # Decide where to store JSON files. Use Railway persistent volume if available.
         if os.path.exists("/data"):
             DATA_DIR = "/data"
         else:
