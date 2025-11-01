@@ -48,7 +48,7 @@ class StickyMessage(commands.Cog):
             json.dump(data, jf, indent=2)
 
     async def repost_sticky(self, message: discord.Message):
-        if message.author.bot or not message.guild:
+        if (message.author.bot and message.author.id != self.bot.user.id) or not message.guild:
             return
 
         data = self.load_all_stickies()
