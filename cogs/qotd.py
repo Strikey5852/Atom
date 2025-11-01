@@ -9,11 +9,6 @@ from apscheduler.triggers.cron import CronTrigger
 
 class QOTD(commands.Cog):
     def __init__(self, bot):
-        """Initialize the QOTD cog.
-        
-        Args:
-            bot: The Discord bot instance
-        """
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
         if os.path.exists("/data"):
@@ -23,26 +18,13 @@ class QOTD(commands.Cog):
 
         self.qotd_json_path = f"{DATA_DIR}/qotd.json"  # Stores per-guild questions and settings
 
-    # --------------------------------
-    # Storage Management
-    # --------------------------------
     def _ensure_qotd_json(self):
-        """Initialize the JSON storage file if it doesn't exist.
-        Creates an empty dictionary for guild data storage."""
         os.makedirs(os.path.dirname(self.qotd_json_path), exist_ok=True)
         if not os.path.exists(self.qotd_json_path):
             with open(self.qotd_json_path, "w", encoding="utf-8") as jf:
                 json.dump({}, jf)
 
     def load_all_guild_questions(self) -> dict:
-        """Load and return the guild data from storage.
-        
-        Returns:
-            dict: Mapping of guild_id (str) to guild data dictionary containing:
-                - questions: list of question strings
-                - channel_id: ID of QOTD channel (int or None)
-                - warning_channel_id: ID of warning channel (int or None)
-        """
         self._ensure_qotd_json()
         try:
             with open(self.qotd_json_path, "r", encoding="utf-8") as jf:
@@ -70,14 +52,6 @@ class QOTD(commands.Cog):
             json.dump(data, jf, indent=2)
 
     def get_questions_for_guild(self, guild_id: int) -> list:
-        """Get the list of questions for a specific guild.
-        
-        Args:
-            guild_id: The Discord guild ID
-            
-        Returns:
-            list: List of questions for the guild, or empty list if none exist
-        """
         data = self.load_all_guild_questions()
         g = data.get(str(guild_id))
         if not g:
@@ -85,12 +59,6 @@ class QOTD(commands.Cog):
         return g.get("questions", [])
 
     def set_questions_for_guild(self, guild_id: int, questions: list):
-        """Update the question list for a specific guild.
-        
-        Args:
-            guild_id: The Discord guild ID
-            questions: List of question strings to store
-        """
         data = self.load_all_guild_questions()
         g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
         g["questions"] = questions
@@ -98,12 +66,6 @@ class QOTD(commands.Cog):
         self.save_all_guild_questions(data)
 
     def set_channel_for_guild(self, guild_id: int, channel_id: int):
-        """Set the QOTD channel for a specific guild.
-        
-        Args:
-            guild_id: The Discord guild ID
-            channel_id: The ID of the channel where QOTD will be posted
-        """
         data = self.load_all_guild_questions()
         g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
         g["channel_id"] = channel_id
@@ -122,12 +84,6 @@ class QOTD(commands.Cog):
         return data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
 
     async def send_warning(self, guild_id: int, message: str):
-        """Send a warning message to the configured warning channel.
-        
-        Args:
-            guild_id: The ID of the guild to send the warning to
-            message: The warning message to send
-        """
         data = self.load_all_guild_questions()
         guild_data = data.get(str(guild_id), {})
         warn_id = guild_data.get("warning_channel_id")
@@ -140,19 +96,7 @@ class QOTD(commands.Cog):
                 except Exception:
                     pass
 
-    # --------------------------------
-    # Question Sending Logic
-    # --------------------------------
     async def send_question(self, guild_id: int):
-        """Pick and send a random question for a specific guild.
-        
-        Selects a random question from the guild's list, removes it,
-        sends it to the guild's configured QOTD channel, and sends
-        warnings to the guild's warning channel if question count is low.
-        
-        Args:
-            guild_id: The Discord guild ID to send a question for
-        """
         data = self.load_all_guild_questions()
         gk = str(guild_id)
         guild_data = data.get(gk, {})
@@ -199,14 +143,7 @@ class QOTD(commands.Cog):
         # Save changes
         self.save_all_guild_questions(data)
 
-    # --------------------------------
-    # Scheduler Setup
-    # --------------------------------
     async def _scheduled_send_questions(self):
-        """Send questions to all guilds the bot is in.
-        
-        Called by the scheduler at the configured time to send
-        one question to each guild the bot is currently in."""
         for guild in self.bot.guilds:
             await self.send_question(guild.id)
 
@@ -221,9 +158,6 @@ class QOTD(commands.Cog):
             self.scheduler.start()
             print("QOTD scheduler started")
 
-    # --------------------------------
-    # Question Management Commands
-    # --------------------------------
     @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
@@ -277,9 +211,6 @@ class QOTD(commands.Cog):
 
         await ctx.send("Sent a question manually!")
 
-    # --------------------------------
-    # Channel Configuration Commands
-    # --------------------------------
     @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
     @commands.guild_only()

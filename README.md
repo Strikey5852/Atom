@@ -16,7 +16,3 @@ Atom is a Discord bot built with discord.py, currently under development with mo
 
 - Add Atom as a user app (use anywhere):  
 [Invite as User App](https://discord.com/oauth2/authorize?client_id=1379696768765132872&integration_type=1&scope=applications.commands)
-
-## Legal
-- [Terms of Service](TERMS_OF_SERVICE.md)  
-- [Privacy Policy](PRIVACY_POLICY.md)
