@@ -4,10 +4,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-
 class StickyMessage(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._cooldown_channels = set()
 
         if os.path.exists("/data"):
             DATA_DIR = "/data"
@@ -48,7 +48,38 @@ class StickyMessage(commands.Cog):
             json.dump(data, jf, indent=2)
 
     async def repost_sticky(self, message: discord.Message):
-        if message.author.bot or not message.guild:
+        data = self.load_all_stickies()
+        guild_id = str(message.guild.id)
+        channel_id = str(message.channel.id)
+
+        sticky_info = data[guild_id][channel_id]
+        content = sticky_info.get("content")
+        last_msg_id = sticky_info.get("last_message_id")
+
+        self._cooldown_channels.add(channel_id)
+        try:
+            # delete old sticky
+            if last_msg_id:
+                try:
+                    last_msg = await message.channel.fetch_message(last_msg_id)
+                    await last_msg.delete()
+                except Exception:
+                    pass
+
+            # send new sticky and update JSON
+            new_msg = await message.channel.send(content)
+            sticky_info["last_message_id"] = new_msg.id
+            data[guild_id][channel_id] = sticky_info
+            self.save_all_stickies(data)
+        finally:
+            self._cooldown_channels.discard(channel_id)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if not message.guild:
+            return
+        # Ignore other bots
+        if message.author.bot and message.author.id != self.bot.user.id:
             return
 
         data = self.load_all_stickies()
@@ -57,24 +88,14 @@ class StickyMessage(commands.Cog):
 
         if guild_id not in data or channel_id not in data[guild_id]:
             return
-
         sticky_info = data[guild_id][channel_id]
-        content = sticky_info.get("content")
-        old_msg_id = sticky_info.get("last_message_id")
 
-        try:
-            old_msg = await message.channel.fetch_message(old_msg_id)
-            await old_msg.delete()
-        except:
-            pass
-
-        new_msg = await message.channel.send(content)
-        sticky_info["last_message_id"] = new_msg.id
-        data[guild_id][channel_id] = sticky_info
-        self.save_all_stickies(data)
-
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
+        # Ignore if message is the last sticky or channel is in cooldown
+        if message.id == sticky_info.get("last_message_id"):
+            return
+        if channel_id in self._cooldown_channels:
+            return
+        
         await self.repost_sticky(message)
 
     @commands.hybrid_command(name="setsticky", description="Set a sticky message in a specific channel.")
@@ -86,24 +107,28 @@ class StickyMessage(commands.Cog):
         guild_id = str(ctx.guild.id)
         channel_id = str(channel.id)
 
-        # delete existing sticky if present
-        if guild_id in data and channel_id in data[guild_id]:
-            old_id = data[guild_id][channel_id].get("last_message_id")
-            if old_id:
-                try:
-                    old_msg = await channel.fetch_message(old_id)
-                    await old_msg.delete()
-                except:
-                    pass
+        self._cooldown_channels.add(channel_id)
 
-        msg = await channel.send(content)
+        try:
+            # delete existing sticky if present
+            if guild_id in data and channel_id in data[guild_id]:
+                last_msg_id = data[guild_id][channel_id].get("last_message_id")
+                if last_msg_id:
+                    try:
+                        last_msg = await channel.fetch_message(last_msg_id)
+                        await last_msg.delete()
+                    except Exception:
+                        pass
 
-        if guild_id not in data:
-            data[guild_id] = {}
-        data[guild_id][channel_id] = {"content": content, "last_message_id": msg.id}
-        self.save_all_stickies(data)
-
-        await ctx.send(f"Sticky message set in {channel.mention}")
+            # send new sticky message
+            msg = await channel.send(content)
+            if guild_id not in data:
+                data[guild_id] = {}
+            data[guild_id][channel_id] = {"content": content, "last_message_id": msg.id}
+            self.save_all_stickies(data)
+        finally:
+            await ctx.send(f"Sticky message set in {channel.mention}")
+            self._cooldown_channels.discard(channel_id)
 
     @commands.hybrid_command(name="removesticky", description="Remove the sticky message from a specific channel.")
     @app_commands.describe(channel="The channel to remove the sticky message from.")
@@ -122,8 +147,8 @@ class StickyMessage(commands.Cog):
 
         if last_id:
             try:
-                old_msg = await channel.fetch_message(last_id)
-                await old_msg.delete()
+                last_msg = await channel.fetch_message(last_id)
+                await last_msg.delete()
             except Exception:
                 pass
 
