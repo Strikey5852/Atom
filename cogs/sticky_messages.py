@@ -120,19 +120,18 @@ class StickyMessage(commands.Cog):
         sticky_info = data[guild_id][channel_id]
         last_id = sticky_info.get("last_message_id")
 
-        # try to delete the message
         if last_id:
             try:
                 old_msg = await channel.fetch_message(last_id)
                 await old_msg.delete()
-            except:
+            except Exception:
                 pass
 
         del data[guild_id][channel_id]
         if not data[guild_id]:
             del data[guild_id]
-        self.save_all_stickies(data)
 
+        self.save_all_stickies(data)
         await ctx.send(f"Removed sticky message from {channel.mention}")
 
     @commands.hybrid_command(name="liststickies", description="Show all sticky messages in this server.")
