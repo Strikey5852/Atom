@@ -10,6 +10,8 @@ class DiceRoller(commands.Cog):
 
     @commands.hybrid_command(name="roll", description="Roll dice in NdM format, e.g. 2d6 or 1d20+3")
     @app_commands.describe(dice="The dice to roll in NdM format (e.g. 2d6, 1d20+3, or 3d8-2)")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def roll_dice(self, ctx: commands.Context, dice: str):
         # Match patterns like 2d6, 1d20+3, or 3d8-2
         match = re.fullmatch(r'(\d+)d(\d+)([+-]\d+)?', dice.lower())
