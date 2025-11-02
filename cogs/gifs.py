@@ -100,7 +100,7 @@ class Gifs(commands.Cog):
             color=discord.Color.from_str("#00FFFF")
         )
         embed.set_image(url=gif_url)
-        await ctx.send(content=f"_{content}_", embed=embed)
+        await ctx.send(content=f"***{content}***", embed=embed)
 
     # --- Hybrid commands for each action ---
     @commands.hybrid_command(name="shoot", description="Shoot someone")

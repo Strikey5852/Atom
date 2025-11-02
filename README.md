@@ -3,12 +3,13 @@
 Atom is a Discord bot built with discord.py, currently under development with more features on the way.
 
 ## Features
-- Action commands with GIFs (using nekos.best)
-- Question of the Day system
-- Hourly cat images
-- Can be added to servers or used anywhere by adding it as a user app
-- More features coming soon
-
+- Action Commands — Fun interactive commands with GIFs (powered by nekos.best)
+- Question of the Day System — Automatically post daily discussion questions
+- Hourly Cat Images — Adorable cat pictures delivered every hour
+- Sticky Messages — Keep important info visible by automatically reposting it when chat moves
+- Dice Roller — Roll dice in NdM format (e.g. 2d6, 1d20+3, or 3d8-2) for games or random fun
+- Use Anywhere — Add Atom to servers or use it directly as a user app
+- More Features Coming Soon
 
 ## Invite Atom
 - Add Atom to your server as a bot:  

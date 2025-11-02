@@ -14,7 +14,7 @@ class StickyMessage(commands.Cog):
         else:
             DATA_DIR = "data"
 
-        self.sticky_json_path = f"{DATA_DIR}/sticky_messages.json"
+        self.sticky_json_path = f"{DATA_DIR}/sticky.json"
 
     def _ensure_sticky_json(self):
         os.makedirs(os.path.dirname(self.sticky_json_path), exist_ok=True)

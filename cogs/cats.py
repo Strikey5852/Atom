@@ -55,7 +55,6 @@ class Cats(commands.Cog):
                 id="post_cat_pic"
             )
             self.scheduler.start()
-            print("Cats scheduler started.")
 
     async def post_cat_pic(self):
         """Post a cat picture to all configured guild channels."""

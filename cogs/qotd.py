@@ -156,7 +156,6 @@ class QOTD(commands.Cog):
                 CronTrigger(hour=20, minute=00, timezone="Asia/Kolkata"),
             )
             self.scheduler.start()
-            print("QOTD scheduler started")
 
     @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
     @commands.has_permissions(administrator=True)
