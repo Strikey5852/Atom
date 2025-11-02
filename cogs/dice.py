@@ -71,7 +71,7 @@ class DiceRoller(commands.Cog):
 
         # Build display strings
         def build_group_string(group, limit_rolls=None):
-            """Generate a readable group string, truncating if limit_rolls is given."""
+            # Generate a readable group string, truncating if limit_rolls is given.
             if group["type"] == "mod":
                 return str(group["value"])
             
@@ -102,9 +102,6 @@ class DiceRoller(commands.Cog):
 
         # Aggressive truncation loop if too long
         if len(full_message) > DISCORD_LIMIT:
-            # Determine total roll count (only dice groups)
-            total_rolls = sum(len(g["rolls"]) for g in dice_groups if g["type"] == "dice")
-
             # Start truncation progressively
             limit_ratio = 1.0
             while len(full_message) > DISCORD_LIMIT and limit_ratio > 0.01:
