@@ -10,10 +10,9 @@ class DiceRoller(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(
-        name="roll",
-        description="Roll dice in NdM format, e.g. 2d6, 1d20+3, or 2d6+1d8-2"
-    )
+    @commands.hybrid_command(name="roll",description="Roll dice in NdM format, e.g. 2d6, 1d20+3, or 2d6+1d8-2")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(dice="The dice to roll in NdM format (e.g. 2d6, 1d20+3, or 2d6+1d8-2)")
     async def roll_dice(self, ctx: commands.Context, dice: str):
         # Parse dice and modifiers
@@ -79,10 +78,7 @@ class DiceRoller(commands.Cog):
             rolls = group["rolls"]
             sides = group["sides"]
             
-            rolls_str_list = [
-                f"**{r}**" if r == 1 or r == sides else str(r)
-                for r in rolls
-            ]
+            rolls_str_list = [f"**{r}**" if r == 1 or r == sides else str(r) for r in rolls]
 
             if limit_rolls and len(rolls_str_list) > limit_rolls:
                 rolls_str_list = rolls_str_list[:limit_rolls] + ["..."]
