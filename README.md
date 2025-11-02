@@ -7,7 +7,7 @@ Atom is a Discord bot built with discord.py, currently under development with mo
 - Question of the Day System — Automatically post daily discussion questions
 - Hourly Cat Images — Adorable cat pictures delivered every hour
 - Sticky Messages — Keep important info visible by automatically reposting it when chat moves
-- Dice Roller — Roll dice in NdM format (e.g. 2d6, 1d20+3, or 3d8-2) for games or random fun
+- Dice Roller — Roll dice in NdM format (e.g. 2d6, 1d20+3, or 2d6+1d8-2) for games or random fun
 - Use Anywhere — Add Atom to servers or use it directly as a user app
 - More Features Coming Soon
 
