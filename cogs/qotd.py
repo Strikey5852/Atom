@@ -96,7 +96,7 @@ class QOTD(commands.Cog):
                 except Exception:
                     pass
 
-    async def send_question(self, guild_id: int):
+    async def send_question(self, guild_id: int) -> bool:
         data = self.load_all_guild_questions()
         gk = str(guild_id)
         guild_data = data.get(gk, {})
@@ -104,7 +104,7 @@ class QOTD(commands.Cog):
         ch_id = guild_data.get("channel_id")
 
         if not questions or not ch_id:
-            return
+            return False
 
         # Pick and remove a random question
         question = random.choice(questions)
@@ -112,23 +112,23 @@ class QOTD(commands.Cog):
         guild_data["questions"] = questions
         data[gk] = guild_data
 
-        # Try to send to the guild's channel
         channel = self.bot.get_channel(ch_id)
-        if channel:
-            try:
-                # Get ping role if configured
-                ping_text = ""
-                ping_role_id = guild_data.get("ping_role_id")
-                if ping_role_id:
-                    guild = channel.guild
-                    role = guild.get_role(ping_role_id)
-                    if role:
-                        ping_text = f"{role.mention}"
-                
-                # Send the question with optional ping
-                await channel.send(f"{ping_text} {question}")
-            except Exception:
-                pass
+        if not channel:
+            return False
+        try:
+            # Get ping role if configured
+            ping_text = ""
+            ping_role_id = guild_data.get("ping_role_id")
+            if ping_role_id:
+                guild = channel.guild
+                role = guild.get_role(ping_role_id)
+                if role:
+                    ping_text = f"{role.mention}"
+            
+            # Send the question with optional ping
+            await channel.send(f"{ping_text} {question}")
+        except Exception:
+            return False
 
         # Send warnings to this guild if their question count is low
         warn_id = guild_data.get("warning_channel_id")
@@ -142,6 +142,7 @@ class QOTD(commands.Cog):
 
         # Save changes
         self.save_all_guild_questions(data)
+        return True
 
     async def _scheduled_send_questions(self):
         for guild in self.bot.guilds:
@@ -198,17 +199,11 @@ class QOTD(commands.Cog):
     @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def qotd_now(self, ctx):
-        await self.send_question(ctx.guild.id)
-        # try to send ephemeral reply if this was an interaction
-        interaction = getattr(ctx, "interaction", None)
-        if interaction is not None:
-            try:
-                await interaction.response.send_message("Sent a question manually!", ephemeral=True)
-                return
-            except Exception:
-                pass
-
-        await ctx.send("Sent a question manually!")
+        success = await self.send_question(ctx.guild.id)
+        if success:
+            await ctx.send("Sent a question manually!")
+        else:
+            await ctx.send("No available question or QOTD channel not set")
 
     @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
