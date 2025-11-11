@@ -101,6 +101,7 @@ class StickyMessage(commands.Cog):
     @commands.hybrid_command(name="setsticky", description="Set a sticky message in a specific channel.")
     @app_commands.describe(channel="The channel to set the sticky message in.", content="The message content to stick.")
     @commands.has_permissions(manage_messages=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def set_sticky(self, ctx: commands.Context, channel: discord.TextChannel, content: str):
         data = self.load_all_stickies()
@@ -133,6 +134,7 @@ class StickyMessage(commands.Cog):
     @commands.hybrid_command(name="removesticky", description="Remove the sticky message from a specific channel.")
     @app_commands.describe(channel="The channel to remove the sticky message from.")
     @commands.has_permissions(manage_messages=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def remove_sticky(self, ctx: commands.Context, channel: discord.TextChannel):
         data = self.load_all_stickies()
@@ -161,6 +163,7 @@ class StickyMessage(commands.Cog):
 
     @commands.hybrid_command(name="liststickies", description="Show all sticky messages in this server.")
     @commands.has_permissions(manage_messages=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def list_stickies(self, ctx: commands.Context):
         data = self.load_all_stickies()

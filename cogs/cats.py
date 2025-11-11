@@ -117,6 +117,7 @@ class Cats(commands.Cog):
 
     @commands.hybrid_command(name="setcatchannel", description="Set the channel where hourly cat pictures will be posted")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(channel="The text channel to post hourly cat pictures in")    
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
@@ -130,6 +131,7 @@ class Cats(commands.Cog):
 
     @commands.hybrid_command(name="catinfo", description="Show the cat channel settings for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def cat_info(self, ctx):
         """Show the current cat channel configuration for this server."""

@@ -160,6 +160,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(question="Question text to add to the QOTD list")
     async def add_qotd(self, ctx, *, question: str):
@@ -171,6 +172,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(number="The question number to remove (from /listqotd)")
     async def remove_qotd(self, ctx, number: int):
@@ -185,6 +187,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="listqotd", description="Show all current questions")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def list_qotd(self, ctx):
         gid = ctx.guild.id
@@ -197,6 +200,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def qotd_now(self, ctx):
         success = await self.send_question(ctx.guild.id)
@@ -207,6 +211,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD postings")
     async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
@@ -218,6 +223,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD warnings")
     async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
@@ -229,14 +235,10 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     @app_commands.describe(role="The role to ping with each QOTD")
     async def set_qotd_ping(self, ctx, role: discord.Role):
-        """Set the role to ping for QOTD announcements in this server.
-        
-        Args:
-            role: The role to ping with each QOTD
-        """
         # Save the ping role setting for this guild
         settings = self.load_all_guild_questions()
         guild_data = settings.setdefault(str(ctx.guild.id), {
@@ -253,6 +255,7 @@ class QOTD(commands.Cog):
 
     @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
     @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def qotd_settings(self, ctx):
         guild_id = str(ctx.guild.id)
