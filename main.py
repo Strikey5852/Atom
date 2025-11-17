@@ -25,22 +25,24 @@ async def on_ready():
     except Exception as e:
         print(f"Error syncing commands: {e}")
 
-@bot.tree.command(name="ping", description="Check bot latency")
+@commands.hybrid_command(name="ping", description="Check bot latency")
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-async def ping(interaction: discord.Interaction):
+async def ping(ctx: commands.Context):
     # Slash command to report latency
     start = time.perf_counter()
-    await interaction.response.send_message("Pinging...")
+    msg = await ctx.send("Pinging...")
     end = time.perf_counter()
     round_trip = (end - start) * 1000  # ms
-    await interaction.edit_original_response(
+    await msg.edit(
         content=(
             f"Pong!\n"
             f"WebSocket latency: `{bot.latency * 1000:.2f} ms`\n"
             f"Round-trip time: `{round_trip:.2f} ms`"
         )
     )
+
+bot.add_command(ping)
 
 async def load_cogs(bot):
     for root, _, files in os.walk("cogs"):
