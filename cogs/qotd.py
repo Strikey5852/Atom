@@ -158,17 +158,24 @@ class QOTD(commands.Cog):
             )
             self.scheduler.start()
 
-    @commands.hybrid_command(name="addqotd", description="Add a new question to the QOTD list")
+    @commands.hybrid_command(name="addqotd", description="Add question(s) to the QOTD list. Use \\n to separate lines.")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
-    @app_commands.describe(question="Question text to add to the QOTD list")
+    @app_commands.describe(question="Question(s) to add to the QOTD list (Seperate multiple questions with \\n)")
     async def add_qotd(self, ctx, *, question: str):
         gid = ctx.guild.id
         questions = self.get_questions_for_guild(gid)
-        questions.append(question.strip())
+
+        normalized = question.replace("\\n", "\n")
+        parts = [q.strip() for q in normalized.splitlines() if q.strip()]
+
+        for q in parts:
+            questions.append(q)
+
         self.set_questions_for_guild(gid, questions)
-        await ctx.send(f"Added question to this server: `{question}`")
+        display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(parts))
+        await ctx.send(f"Added {len(parts)} question(s) to this server:\n{display}")
 
     @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
     @commands.has_permissions(administrator=True)
