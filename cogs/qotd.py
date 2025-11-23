@@ -158,11 +158,11 @@ class QOTD(commands.Cog):
             )
             self.scheduler.start()
 
-    @commands.hybrid_command(name="addqotd", description="Add question(s) to the QOTD list. Use \\n to separate lines.")
+    @commands.hybrid_command(name="addqotd", description="Add question(s) to the QOTD list. (Seperate by newlines; use \\n for slash commands.)")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
-    @app_commands.describe(question="Question(s) to add to the QOTD list (Seperate multiple questions with \\n)")
+    @app_commands.describe(question="Question(s) to add (Seperate by newlines; use \\n for slash commands.)")
     async def add_qotd(self, ctx, *, question: str):
         gid = ctx.guild.id
         questions = self.get_questions_for_guild(gid)
