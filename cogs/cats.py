@@ -85,12 +85,11 @@ class Cats(commands.Cog):
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def cat(self, ctx):
-        # We don't need 'async with session' here because we use self.session
-        async with self.session.get("https://api.thecatapi.com/v1/images/search") as resp:
+        async with self.session.get("https://api.thecatapi.com/v1/images/search", timeout=10) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 image_url = data[0]["url"]
-                embed = discord.Embed(title="Random Cat Pic :3", color=discord.Color.cyan())
+                embed = discord.Embed(title="Random Cat Pic :3", color=discord.Color.from_str("#00FFFF"))
                 embed.set_image(url=image_url)
                 await ctx.send(embed=embed)
             else:
@@ -102,11 +101,6 @@ class Cats(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(channel="The text channel to post hourly cat pictures in")    
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
-        # Check permissions before saving
-        perms = channel.permissions_for(ctx.guild.me)
-        if not perms.send_messages or not perms.embed_links:
-            return await ctx.send(f"I don't have permission to send embeds in {channel.mention}!", ephemeral=True)
-
         self.settings[str(ctx.guild.id)] = {"channel_id": channel.id}
         self.save_settings()
         await ctx.send(f"Cat pictures will now be posted in {channel.mention}")

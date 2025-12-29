@@ -183,7 +183,7 @@ class StickyMessage(commands.Cog):
             content_preview = (info['content'][:50] + '...') if len(info['content']) > 50 else info['content']
             lines.append(f"**{i}.** {channel_name}: {content_preview}")
 
-        embed = discord.Embed(title="Server Sticky Messages", description="\n".join(lines), color=discord.Color.blue())
+        embed = discord.Embed(title="Server Sticky Messages", description="\n".join(lines), color=discord.Color.from_str("#00FFFF"))
         await ctx.send(embed=embed)
 
 async def setup(bot):
