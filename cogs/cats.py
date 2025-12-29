@@ -14,7 +14,7 @@ class Cats(commands.Cog):
         
         # Path Setup
         self.data_dir = "/data" if os.path.exists("/data") else "data"
-        self.cats_json_path = os.path.join(self.data_dir, "cats.json")
+        self.cats_json_path = os.path.join(self.data_dir, "hourly_cats.json")
         
         self.settings = self.load_settings()
         
