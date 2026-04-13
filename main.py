@@ -1,21 +1,22 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
+import asyncio
 import os
 import time
-import asyncio
 
+import discord
+from discord import app_commands
+from discord.ext import commands
 
 # Main bot entrypoint
 bot = commands.Bot(
     command_prefix=">",  # Prefix for non-slash (text) commands
-    intents=discord.Intents.all()
+    intents=discord.Intents.all(),
 )
+
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    
+
     # Sync commands after bot is ready
     try:
         synced = await bot.tree.sync()
@@ -24,6 +25,7 @@ async def on_ready():
         print("Synced command names:", [cmd.name for cmd in synced])
     except Exception as e:
         print(f"Error syncing commands: {e}")
+
 
 @commands.hybrid_command(name="ping", description="Check bot latency")
 @app_commands.allowed_installs(guilds=True, users=True)
@@ -42,7 +44,9 @@ async def ping(ctx: commands.Context):
         )
     )
 
+
 bot.add_command(ping)
+
 
 async def load_cogs(bot):
     for root, _, files in os.walk("cogs"):
@@ -52,11 +56,13 @@ async def load_cogs(bot):
                 await bot.load_extension(module)
                 print(f"Loaded cog: {module}")
 
+
 async def main():
     await load_cogs(bot)
     TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         raise RuntimeError("TOKEN environment variable is not set")
     await bot.start(TOKEN)
+
 
 asyncio.run(main())
