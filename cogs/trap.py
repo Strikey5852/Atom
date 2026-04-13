@@ -41,7 +41,7 @@ class Trap(commands.Cog):
         self.trap_channels[guild_id] = channel.id
         self.save_traps()
         await ctx.send(
-            f"{channel.mention} is now the trap channel. Any non-admin message sent here will result in a ban."
+            f"{channel.mention} is now the trap channel. Any message sent here will result in a ban."
         )
 
     @commands.hybrid_command(
