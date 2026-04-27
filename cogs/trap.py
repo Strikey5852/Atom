@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 
@@ -68,18 +69,40 @@ class Trap(commands.Cog):
         guild_id = str(message.guild.id)
         trap_channel_id = self.trap_channels.get(guild_id)
 
-        if trap_channel_id and message.channel.id == trap_channel_id:
-            if message.author.guild_permissions.administrator:
-                return
+        if trap_channel_id is None:
+            return
 
+        if message.channel.id != trap_channel_id:
+            return
+
+        if message.author.guild_permissions.administrator:
+            return
+
+        # Retry ban every 5 seconds, up to 6 attempts (30 seconds total)
+        max_attempts = 6
+        for attempt in range(max_attempts):
             try:
                 await message.guild.ban(
                     message.author,
                     reason=f"Triggered trap channel: #{message.channel.name}",
-                    delete_message_seconds=86400
+                    delete_message_seconds=86400,
                 )
-            except Exception:
-                pass
+                print(
+                    f"[TRAP] Banned {message.author} from {message.guild.name} "
+                )
+                return  # Success
+            except Exception as e:
+                if attempt < max_attempts - 1:
+                    print(
+                        f"[TRAP] Ban attempt {attempt + 1} failed for {message.author} "
+                        f"in {message.guild.name}: {e}. Retrying in 5s..."
+                    )
+                    await asyncio.sleep(5)
+                else:
+                    print(
+                        f"[TRAP] All {max_attempts} ban attempts failed for {message.author} "
+                        f"in {message.guild.name}. Last error: {e}"
+                    )
 
 async def setup(bot):
     await bot.add_cog(Trap(bot))
