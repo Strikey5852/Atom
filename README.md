@@ -81,26 +81,7 @@ Atom uses GitHub Gists as its database backend. This provides:
 - **Easy Backup** — Data is automatically backed up to GitHub
 - **Portability** — Access your bot data from anywhere
 
-### Automatic Migration
-
-If you're upgrading from the previous local JSON storage, the bot will **automatically migrate** your existing data to GitHub Gists on startup. Simply deploy the updated code and restart your bot - no manual intervention required!
-
-The migration process:
-1. Detects local JSON files in the `data/` directory
-2. Uploads the data to a new GitHub Gist
-3. Renames the old files with a `.migrated` suffix
-4. Continues normal operation with the new database
-
-### Manual Migration
-
-If you prefer to migrate manually, you can use the included migration script:
-```bash
-python migrate_to_gist.py
-```
-
-### Gist Configuration
-
-The bot will automatically create a private gist on first run if `GIST_AUTO_CREATE=true`. You can also manually create a gist and set its ID in the `GIST_ID` environment variable.
+The bot will automatically create a private gist on first run if `GIST_AUTO_CREATE=true`. You can also manually create a gist and set its ID in the `GIST_ID` environment variable, or point to an existing gist.
 
 ### Data Files
 
