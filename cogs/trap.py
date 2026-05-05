@@ -6,28 +6,38 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from database import get_database
+
 
 class Trap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data_dir = "/data" if os.path.exists("/data") else "data"
-        self.trap_json_path = os.path.join(self.data_dir, "trap.json")
-        self.trap_channels = self.load_traps()
+        
+        self.db = get_database()
+        self.filename = "trap.json"
+        
+        self.trap_channels = {}
 
-    def load_traps(self) -> dict:
-        if not os.path.exists(self.trap_json_path):
-            return {}
+    async def load_traps(self) -> dict:
+        """Load trap channels from the database."""
         try:
-            with open(self.trap_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data if data else {}
-        except Exception:
-            return {}
+            self.trap_channels = await self.db.get_all(self.filename)
+        except Exception as e:
+            print(f"[Trap] Error loading traps: {e}")
+            self.trap_channels = {}
+        return self.trap_channels
 
-    def save_traps(self):
-        os.makedirs(os.path.dirname(self.trap_json_path), exist_ok=True)
-        with open(self.trap_json_path, "w", encoding="utf-8") as f:
-            json.dump(self.trap_channels, f, indent=2)
+    async def save_traps(self):
+        """Save trap channels to the database."""
+        try:
+            await self.db.set_all(self.filename, self.trap_channels)
+        except Exception as e:
+            print(f"[Trap] Error saving traps: {e}")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Load traps from database
+        await self.load_traps()
 
     @commands.hybrid_command(
         name="settrap",
@@ -40,7 +50,7 @@ class Trap(commands.Cog):
     async def set_trap(self, ctx, channel: discord.TextChannel):
         guild_id = str(ctx.guild.id)
         self.trap_channels[guild_id] = channel.id
-        self.save_traps()
+        await self.save_traps()
         await ctx.send(
             f"{channel.mention} is now the trap channel. Any message sent here will result in a ban."
         )
@@ -55,7 +65,7 @@ class Trap(commands.Cog):
         guild_id = str(ctx.guild.id)
         if guild_id in self.trap_channels:
             del self.trap_channels[guild_id]
-            self.save_traps()
+            await self.save_traps()
             await ctx.send("Trap channel has been disabled.")
         else:
             await ctx.send("No trap channel is currently set.")

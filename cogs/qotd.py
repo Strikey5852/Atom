@@ -7,28 +7,20 @@ from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from database import get_database
+
 class QOTD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
-        if os.path.exists("/data"):
-            DATA_DIR = "/data"
-        else:
-            DATA_DIR = "data"
+        
+        self.db = get_database()
+        self.filename = "qotd.json"
 
-        self.qotd_json_path = f"{DATA_DIR}/qotd.json"  # Stores per-guild questions and settings
-
-    def _ensure_qotd_json(self):
-        os.makedirs(os.path.dirname(self.qotd_json_path), exist_ok=True)
-        if not os.path.exists(self.qotd_json_path):
-            with open(self.qotd_json_path, "w", encoding="utf-8") as jf:
-                json.dump({}, jf)
-
-    def load_all_guild_questions(self) -> dict:
-        self._ensure_qotd_json()
+    async def load_all_guild_questions(self) -> dict:
+        """Load all guild questions from the database."""
         try:
-            with open(self.qotd_json_path, "r", encoding="utf-8") as jf:
-                data = json.load(jf) or {}
+            data = await self.db.get_all(self.filename)
         except Exception:
             return {}
 
@@ -46,45 +38,56 @@ class QOTD(commands.Cog):
 
         return normalized
 
-    def save_all_guild_questions(self, data: dict):
-        os.makedirs(os.path.dirname(self.qotd_json_path), exist_ok=True)
-        with open(self.qotd_json_path, "w", encoding="utf-8") as jf:
-            json.dump(data, jf, indent=2)
+    async def save_all_guild_questions(self, data: dict):
+        """Save all guild questions to the database."""
+        try:
+            await self.db.set_all(self.filename, data)
+        except Exception as e:
+            print(f"[QOTD] Error saving: {e}")
 
     def get_questions_for_guild(self, guild_id: int) -> list:
-        data = self.load_all_guild_questions()
+        """Get questions for a guild from cache."""
+        data = self.db.get_all_cached(self.filename)
         g = data.get(str(guild_id))
         if not g:
             return []
         return g.get("questions", [])
 
-    def set_questions_for_guild(self, guild_id: int, questions: list):
-        data = self.load_all_guild_questions()
+    async def set_questions_for_guild(self, guild_id: int, questions: list):
+        """Set questions for a guild and save to database."""
+        data = self.db.get_all_cached(self.filename)
         g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
         g["questions"] = questions
         data[str(guild_id)] = g
-        self.save_all_guild_questions(data)
+        self.db.set_all_cached(self.filename, data)
+        await self.save_all_guild_questions(data)
 
-    def set_channel_for_guild(self, guild_id: int, channel_id: int):
-        data = self.load_all_guild_questions()
+    async def set_channel_for_guild(self, guild_id: int, channel_id: int):
+        """Set the QOTD channel for a guild."""
+        data = self.db.get_all_cached(self.filename)
         g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
         g["channel_id"] = channel_id
         data[str(guild_id)] = g
-        self.save_all_guild_questions(data)
+        self.db.set_all_cached(self.filename, data)
+        await self.save_all_guild_questions(data)
 
-    def set_warning_channel_for_guild(self, guild_id: int, channel_id: int):
-        data = self.load_all_guild_questions()
+    async def set_warning_channel_for_guild(self, guild_id: int, channel_id: int):
+        """Set the warning channel for a guild."""
+        data = self.db.get_all_cached(self.filename)
         g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
         g["warning_channel_id"] = channel_id
         data[str(guild_id)] = g
-        self.save_all_guild_questions(data)
+        self.db.set_all_cached(self.filename, data)
+        await self.save_all_guild_questions(data)
 
     def get_guild_settings(self, guild_id: int):
-        data = self.load_all_guild_questions()
+        """Get settings for a guild from cache."""
+        data = self.db.get_all_cached(self.filename)
         return data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
 
     async def send_warning(self, guild_id: int, message: str):
-        data = self.load_all_guild_questions()
+        """Send a warning message to the warning channel."""
+        data = self.db.get_all_cached(self.filename)
         guild_data = data.get(str(guild_id), {})
         warn_id = guild_data.get("warning_channel_id")
         
@@ -97,7 +100,8 @@ class QOTD(commands.Cog):
                     pass
 
     async def send_question(self, guild_id: int) -> bool:
-        data = self.load_all_guild_questions()
+        """Send a random question to the QOTD channel."""
+        data = self.db.get_all_cached(self.filename)
         gk = str(guild_id)
         guild_data = data.get(gk, {})
         questions = guild_data.get("questions", [])
@@ -141,15 +145,20 @@ class QOTD(commands.Cog):
                     await warn_channel.send("Only **1 question** remaining in this server's list!")
 
         # Save changes
-        self.save_all_guild_questions(data)
+        self.db.set_all_cached(self.filename, data)
+        await self.save_all_guild_questions(data)
         return True
 
     async def _scheduled_send_questions(self):
+        """Scheduled task to send questions to all guilds."""
         for guild in self.bot.guilds:
             await self.send_question(guild.id)
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Load data from database
+        await self.load_all_guild_questions()
+        
         if not self.scheduler.running:
             # Schedule every day at 08:00 PM IST
             self.scheduler.add_job(
@@ -173,7 +182,7 @@ class QOTD(commands.Cog):
         for q in parts:
             questions.append(q)
 
-        self.set_questions_for_guild(gid, questions)
+        await self.set_questions_for_guild(gid, questions)
         display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(parts))
         await ctx.send(f"Added {len(parts)} question(s) to this server:\n{display}")
 
@@ -189,7 +198,7 @@ class QOTD(commands.Cog):
             await ctx.send("Invalid question number.")
             return
         removed_question = questions.pop(number - 1)
-        self.set_questions_for_guild(gid, questions)
+        await self.set_questions_for_guild(gid, questions)
         await ctx.send(f"Removed question #{number}: `{removed_question}` from this server")
 
     @commands.hybrid_command(name="listqotd", description="Show all current questions")
@@ -222,10 +231,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD postings")
     async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
-        guild_id = str(ctx.guild.id)
-        settings = self.load_all_guild_questions()
-        settings.setdefault(guild_id, {})["channel_id"] = channel.id
-        self.save_all_guild_questions(settings)
+        await self.set_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD channel set to {channel.mention}")
 
     @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
@@ -234,10 +240,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD warnings")
     async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
-        guild_id = str(ctx.guild.id)
-        settings = self.load_all_guild_questions()
-        settings.setdefault(guild_id, {})["warning_channel_id"] = channel.id
-        self.save_all_guild_questions(settings)
+        await self.set_warning_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD warning channel set to {channel.mention}")
 
     @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
@@ -247,16 +250,17 @@ class QOTD(commands.Cog):
     @app_commands.describe(role="The role to ping with each QOTD")
     async def set_qotd_ping(self, ctx, role: discord.Role):
         # Save the ping role setting for this guild
-        settings = self.load_all_guild_questions()
-        guild_data = settings.setdefault(str(ctx.guild.id), {
+        data = self.db.get_all_cached(self.filename)
+        guild_data = data.setdefault(str(ctx.guild.id), {
             "questions": [],
             "channel_id": None,
             "warning_channel_id": None,
             "ping_role_id": None
         })
         guild_data["ping_role_id"] = role.id
-        settings[str(ctx.guild.id)] = guild_data
-        self.save_all_guild_questions(settings)
+        data[str(ctx.guild.id)] = guild_data
+        self.db.set_all_cached(self.filename, data)
+        await self.save_all_guild_questions(data)
         
         await ctx.send(f"QOTD will now ping {role.mention}")
 
@@ -266,8 +270,8 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     async def qotd_settings(self, ctx):
         guild_id = str(ctx.guild.id)
-        settings = self.load_all_guild_questions()
-        guild_setting = settings.get(guild_id, {})
+        data = self.db.get_all_cached(self.filename)
+        guild_setting = data.get(guild_id, {})
         ch = guild_setting.get("channel_id")
         warn = guild_setting.get("warning_channel_id")
         ping_role = guild_setting.get("ping_role_id")

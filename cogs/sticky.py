@@ -6,43 +6,35 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from database import get_database
+
 
 class StickyMessage(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._cooldown_channels = set()
 
-        # Determine Data Directory
-        self.data_dir = "/data" if os.path.exists("/data") else "data"
-        self.sticky_json_path = os.path.join(self.data_dir, "sticky.json")
+        self.db = get_database()
+        self.filename = "sticky.json"
 
         # Initialize Cache
-        self.cached_stickies = self.load_all_stickies()
+        self.cached_stickies = {}
 
-    def _ensure_sticky_json(self):
-        os.makedirs(os.path.dirname(self.sticky_json_path), exist_ok=True)
-        if not os.path.exists(self.sticky_json_path):
-            with open(self.sticky_json_path, "w", encoding="utf-8") as jf:
-                json.dump({}, jf)
-
-    def load_all_stickies(self) -> dict:
-        """Loads data from disk into memory cache."""
-        self._ensure_sticky_json()
+    async def load_all_stickies(self) -> dict:
+        """Loads data from the database into memory cache."""
         try:
-            with open(self.sticky_json_path, "r", encoding="utf-8") as jf:
-                return json.load(jf) or {}
+            self.cached_stickies = await self.db.get_all(self.filename)
         except Exception as e:
-            print(f"Error loading stickies: {e}")
-            return {}
+            print(f"[Sticky] Error loading stickies: {e}")
+            self.cached_stickies = {}
+        return self.cached_stickies
 
-    def save_to_disk(self):
-        """Saves current memory cache to disk."""
-        self._ensure_sticky_json()
+    async def save_to_disk(self):
+        """Saves current memory cache to the database."""
         try:
-            with open(self.sticky_json_path, "w", encoding="utf-8") as jf:
-                json.dump(self.cached_stickies, jf, indent=2)
+            await self.db.set_all(self.filename, self.cached_stickies)
         except Exception as e:
-            print(f"Critical Error saving stickies to disk: {e}")
+            print(f"[Sticky] Critical Error saving stickies: {e}")
 
     async def repost_sticky(self, channel: discord.TextChannel):
         """Handles the deletion of the old sticky and sending of the new one."""
@@ -71,10 +63,10 @@ class StickyMessage(commands.Cog):
             new_msg = await channel.send(content)
 
             self.cached_stickies[guild_id][channel_id]["last_message_id"] = new_msg.id
-            self.save_to_disk()
+            await self.save_to_disk()
 
         except Exception as e:
-            print(f"Error in repost_sticky: {e}")
+            print(f"[Sticky] Error in repost_sticky: {e}")
         finally:
             await asyncio.sleep(1)
             self._cooldown_channels.discard(channel_id)
@@ -111,6 +103,11 @@ class StickyMessage(commands.Cog):
 
         # Repost the sticky
         await self.repost_sticky(message.channel)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Load stickies from database
+        await self.load_all_stickies()
 
     @commands.hybrid_command(
         name="setsticky", description="Set a sticky message in a specific channel."
@@ -154,8 +151,8 @@ class StickyMessage(commands.Cog):
             "last_message_id": msg.id,
         }
 
-        # Save to Disk
-        self.save_to_disk()
+        # Save to Database
+        await self.save_to_disk()
         await ctx.send(f"Sticky message set in {channel.mention}")
 
     @commands.hybrid_command(
@@ -187,7 +184,7 @@ class StickyMessage(commands.Cog):
         if not self.cached_stickies[guild_id]:
             del self.cached_stickies[guild_id]
 
-        self.save_to_disk()
+        await self.save_to_disk()
         await ctx.send(f"Removed sticky message from {channel.mention}")
 
     @commands.hybrid_command(

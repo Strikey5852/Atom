@@ -7,35 +7,41 @@ from discord import app_commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from database import get_database
+
 class Cats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
         
-        # Path Setup
-        self.data_dir = "/data" if os.path.exists("/data") else "data"
-        self.cats_json_path = os.path.join(self.data_dir, "hourly_cats.json")
+        self.db = get_database()
+        self.filename = "cats.json"
         
-        self.settings = self.load_settings()
+        self.settings = {}  # In-memory cache
         
         self.session = aiohttp.ClientSession()
 
-    def load_settings(self) -> dict:
-        if not os.path.exists(self.cats_json_path):
-            return {}
+    async def load_settings(self) -> dict:
+        """Load settings from the database."""
         try:
-            with open(self.cats_json_path, "r", encoding="utf-8") as jf:
-                return json.load(jf) or {}
-        except Exception:
-            return {}
+            self.settings = await self.db.get_all(self.filename)
+        except Exception as e:
+            print(f"[Cats] Error loading settings: {e}")
+            self.settings = {}
+        return self.settings
 
-    def save_settings(self):
-        os.makedirs(os.path.dirname(self.cats_json_path), exist_ok=True)
-        with open(self.cats_json_path, "w", encoding="utf-8") as jf:
-            json.dump(self.settings, jf, indent=2)
+    async def save_settings(self):
+        """Save settings to the database."""
+        try:
+            await self.db.set_all(self.filename, self.settings)
+        except Exception as e:
+            print(f"[Cats] Error saving settings: {e}")
 
     @commands.Cog.listener()
     async def on_ready(self):
+        # Load settings when bot is ready
+        await self.load_settings()
+        
         if not self.scheduler.running:
             self.scheduler.add_job(
                 self.post_cat_pic,
@@ -102,7 +108,7 @@ class Cats(commands.Cog):
     @app_commands.describe(channel="The text channel to post hourly cat pictures in")    
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
         self.settings[str(ctx.guild.id)] = {"channel_id": channel.id}
-        self.save_settings()
+        await self.save_settings()
         await ctx.send(f"Cat pictures will now be posted in {channel.mention}")
 
     @commands.hybrid_command(name="catinfo", description="Show the cat channel settings for this server")
@@ -120,5 +126,21 @@ class Cats(commands.Cog):
         else:
             await ctx.send("No cat channel has been set for this server.")
 
+    async def cog_unload(self):
+        """Clean up when cog is unloaded."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+
 async def setup(bot):
-    await bot.add_cog(Cats(bot))
+    await bot.add_cog(Cats(bot))ntion if channel else f"Deleted Channel ({channel_id})"
+            await ctx.send(f"Cat pictures are being posted in {mention}")
+        else:
+            await ctx.send("No cat channel has been set for this server.")
+
+    async def cog_unload(self):
+        """Clean up when cog is unloaded."""
+        if self.session and not self.session.closed:
+            await self.session.close()
+
+async def setup(bot):
+async def setup(bot):
