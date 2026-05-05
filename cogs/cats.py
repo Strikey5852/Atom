@@ -132,15 +132,4 @@ class Cats(commands.Cog):
             await self.session.close()
 
 async def setup(bot):
-    await bot.add_cog(Cats(bot))ntion if channel else f"Deleted Channel ({channel_id})"
-            await ctx.send(f"Cat pictures are being posted in {mention}")
-        else:
-            await ctx.send("No cat channel has been set for this server.")
-
-    async def cog_unload(self):
-        """Clean up when cog is unloaded."""
-        if self.session and not self.session.closed:
-            await self.session.close()
-
-async def setup(bot):
-async def setup(bot):
+    await bot.add_cog(Cats(bot))
