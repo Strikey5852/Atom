@@ -80,6 +80,28 @@ class Trap(commands.Cog):
             }
         self.trap_config[guild_id].update(kwargs)
 
+    @staticmethod
+    def _get_message_signature(message: discord.Message) -> str:
+        """Build a unique fingerprint for a message based on all its content types."""
+        parts = []
+
+        # Text content
+        if message.content:
+            parts.append(f"text:{message.content}")
+
+        # Attachments (filename + size)
+        for att in message.attachments:
+            parts.append(f"att:{att.filename}:{att.size}")
+
+        # Stickers
+        for sticker in message.stickers:
+            parts.append(f"sticker:{sticker.id}")
+
+        if not parts:
+            return ""
+
+        return " | ".join(parts)
+
     def _prune_message_log(self, guild_id: int, user_id: int, time_window: float):
         """Remove entries older than time_window for a given user in a guild."""
         now = time.time()
@@ -134,7 +156,7 @@ class Trap(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="🚨 Trap Ban Triggered",
+            title="Trap Ban Triggered",
             color=discord.Color.red(),
             timestamp=discord.utils.utcnow(),
         )
@@ -180,10 +202,10 @@ class Trap(commands.Cog):
         user = message.author
         threshold = config["threshold"]
         time_window = config["time_window"]
-        content = message.content
 
-        # If message has no text content, ignore it (embeds, stickers, etc.)
-        if not content:
+        # Build a signature that captures text, attachments, and stickers
+        signature = self._get_message_signature(message)
+        if not signature:
             return
 
         guild_id_int = message.guild.id
@@ -195,15 +217,15 @@ class Trap(commands.Cog):
 
         # Append current message
         self._message_log[guild_id_int][user_id].append(
-            (time.time(), content, message.channel.id, message.id)
+            (time.time(), signature, message.channel.id, message.id)
         )
 
         # Prune old entries
         self._prune_message_log(guild_id_int, user_id, time_window)
 
-        # Count how many of the remaining entries have identical content
+        # Count how many of the remaining entries have identical signature
         tracked = self._message_log[guild_id_int][user_id]
-        matching = [entry for entry in tracked if entry[1] == content]
+        matching = [entry for entry in tracked if entry[1] == signature]
 
         if len(matching) >= threshold:
             # Check if ban is already in progress for this user
@@ -227,11 +249,13 @@ class Trap(commands.Cog):
                     if (ch := message.guild.get_channel(ch_id))
                 })
 
+                # For the log, show the original text if present, otherwise describe the content
+                log_content = message.content if message.content else "[non-text content]"
                 await self._send_ban_log(
                     message.guild,
                     config["log_channel_id"],
                     user,
-                    content,
+                    log_content,
                     len(matching),
                     time_window,
                     channel_names,
