@@ -102,6 +102,24 @@ class Trap(commands.Cog):
 
         return " | ".join(parts)
 
+    @staticmethod
+    def _describe_message(message: discord.Message) -> str:
+        """Return a human-readable description of a message's content for logging."""
+        if message.content:
+            return message.content[:1000]
+
+        descriptions = []
+        if message.attachments:
+            names = ", ".join(a.filename for a in message.attachments[:3])
+            descriptions.append(f"[image: {names}]")
+        if message.stickers:
+            names = ", ".join(s.name for s in message.stickers[:3])
+            descriptions.append(f"[sticker: {names}]")
+        if message.embeds:
+            descriptions.append("[embed]")
+
+        return " ".join(descriptions) if descriptions else "[non-text content]"
+
     def _prune_message_log(self, guild_id: int, user_id: int, time_window: float):
         """Remove entries older than time_window for a given user in a guild."""
         now = time.time()
@@ -249,8 +267,8 @@ class Trap(commands.Cog):
                     if (ch := message.guild.get_channel(ch_id))
                 })
 
-                # For the log, show the original text if present, otherwise describe the content
-                log_content = message.content if message.content else "[non-text content]"
+                # For the log, show a human-readable description of what was repeated
+                log_content = self._describe_message(message)
                 await self._send_ban_log(
                     message.guild,
                     config["log_channel_id"],
