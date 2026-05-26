@@ -16,7 +16,7 @@ TIMEOUT_DURATION = 86400  # 24 hours in seconds
 
 
 class TrapActions(discord.ui.View):
-    """Persistent view with Ban and Un-timeout buttons for trap log messages."""
+    """Persistent view with Ban and Forgive buttons for trap log messages."""
 
     def __init__(self, cog: "Trap", user_id: int, guild_id: int):
         self.cog = cog
@@ -26,21 +26,21 @@ class TrapActions(discord.ui.View):
 
         # Ban button
         self.ban_btn = discord.ui.Button(
-            label="Ban",
+            label="🔴 Ban Permanently",
             style=discord.ButtonStyle.danger,
             custom_id=f"trap_ban:{user_id}:{guild_id}",
         )
         self.ban_btn.callback = self.ban_callback
         self.add_item(self.ban_btn)
 
-        # Un-timeout button
-        self.untimeout_btn = discord.ui.Button(
-            label="Un-timeout",
+        # Forgive button
+        self.forgive_btn = discord.ui.Button(
+            label="🟢 Forgive (Un-timeout)",
             style=discord.ButtonStyle.success,
-            custom_id=f"trap_untimeout:{user_id}:{guild_id}",
+            custom_id=f"trap_forgive:{user_id}:{guild_id}",
         )
-        self.untimeout_btn.callback = self.untimeout_callback
-        self.add_item(self.untimeout_btn)
+        self.forgive_btn.callback = self.forgive_callback
+        self.add_item(self.forgive_btn)
 
     async def _check_admin(self, interaction: discord.Interaction) -> bool:
         """Check if the interaction user is an admin. Sends an error if not."""
@@ -54,7 +54,7 @@ class TrapActions(discord.ui.View):
     async def _disable_buttons(self, interaction: discord.Interaction):
         """Disable both buttons and update the message."""
         self.ban_btn.disabled = True
-        self.untimeout_btn.disabled = True
+        self.forgive_btn.disabled = True
         await interaction.message.edit(view=self)
 
     async def ban_callback(self, interaction: discord.Interaction):
@@ -84,7 +84,7 @@ class TrapActions(discord.ui.View):
         await interaction.message.edit(embed=embed)
         await interaction.response.edit_message(view=self)
 
-    async def untimeout_callback(self, interaction: discord.Interaction):
+    async def forgive_callback(self, interaction: discord.Interaction):
         if not await self._check_admin(interaction):
             return
 
@@ -96,7 +96,7 @@ class TrapActions(discord.ui.View):
         try:
             user = await guild.fetch_member(self.user_id)
             if user:
-                await user.timeout(until=None, reason=f"Trap un-timeout by {interaction.user}")
+                await user.timeout(until=None, reason=f"Trap forgiven by {interaction.user}")
         except discord.NotFound:
             pass  # user already left
 
@@ -105,7 +105,7 @@ class TrapActions(discord.ui.View):
         embed = interaction.message.embeds[0]
         embed.add_field(
             name="Processed By",
-            value=f"{interaction.user.mention} — **Un-timed out**",
+            value=f"{interaction.user.mention} — **Forgiven**",
             inline=False,
         )
         await interaction.message.edit(embed=embed)
@@ -224,24 +224,6 @@ class Trap(commands.Cog):
 
         return " | ".join(parts)
 
-    @staticmethod
-    def _describe_message(message: discord.Message) -> str:
-        """Return a human-readable description of a message's content for logging."""
-        if message.content:
-            return message.content[:1000]
-
-        descriptions = []
-        if message.attachments:
-            names = ", ".join(a.filename for a in message.attachments[:3])
-            descriptions.append(f"[image: {names}]")
-        if message.stickers:
-            names = ", ".join(s.name for s in message.stickers[:3])
-            descriptions.append(f"[sticker: {names}]")
-        if message.embeds:
-            descriptions.append("[embed]")
-
-        return " ".join(descriptions) if descriptions else "[non-text content]"
-
     def _prune_message_log(self, guild_id: int, user_id: int, time_window: float):
         """Remove entries older than time_window for a given user in a guild."""
         now = time.time()
@@ -283,34 +265,82 @@ class Trap(commands.Cog):
         guild: discord.Guild,
         log_channel_id: Optional[int],
         user: discord.User,
-        repeated_content: str,
-        repeat_count: int,
-        time_window: int,
+        message: discord.Message,
+        matching: list[tuple[float, str, int, int]],
         channels_used: list[str],
     ):
-        """Send a timeout log embed with Ban and Un-timeout buttons to the configured channel."""
+        """Send a Trap Triggered embed with Ban and Forgive buttons."""
         if not log_channel_id:
             return
         channel = guild.get_channel(log_channel_id)
         if not channel:
             return
 
+        # Attempt to fetch member for join date info
+        member = None
+        try:
+            member = await guild.fetch_member(user.id)
+        except discord.NotFound:
+            pass
+
+        # Velocity: time span between first and last matching message
+        velocity_str = f"{len(matching)} identical messages"
+        if len(matching) >= 2:
+            elapsed = matching[-1][0] - matching[0][0]
+            velocity_str += f" in {elapsed:.2f}s"
+        else:
+            velocity_str += " (instant)"
+
         embed = discord.Embed(
-            title="Trap Timeout Triggered",
+            title="Trap Triggered",
             color=discord.Color.orange(),
             timestamp=discord.utils.utcnow(),
         )
         embed.add_field(name="User", value=f"{user.mention} (`{user.id}`)", inline=False)
         embed.add_field(
-            name="Repeated Content",
-            value=f"```{repeated_content[:1000]}```",
+            name="Account Age",
+            value=discord.utils.format_dt(user.created_at, "R"),
+            inline=True,
+        )
+        embed.add_field(
+            name="Joined Server",
+            value=discord.utils.format_dt(member.joined_at, "R") if member else "Unknown",
+            inline=True,
+        )
+        embed.add_field(name="Velocity", value=velocity_str, inline=False)
+        embed.add_field(
+            name="Channels Targeted",
+            value=", ".join(f"#{ch}" for ch in channels_used),
             inline=False,
         )
-        embed.add_field(name="Repeats", value=f"{repeat_count} in {time_window}s", inline=True)
-        embed.add_field(
-            name="Channels", value=", ".join(f"#{ch}" for ch in channels_used), inline=True
-        )
-        embed.set_footer(text="Timed out for 24h. Admin actions below.")
+
+        # Dynamic payload field: text vs attachment
+        if message.content:
+            embed.add_field(
+                name="Text Payload",
+                value=f"```{message.content[:1000]}```",
+                inline=False,
+            )
+        elif message.attachments:
+            att = message.attachments[0]
+            is_image = att.content_type and att.content_type.startswith("image/")
+            payload_text = f"Name: {att.filename}\nSize: {att.size:,} bytes"
+            if not is_image:
+                payload_text += f"\nType: {att.content_type or 'Unknown'}"
+            embed.add_field(
+                name="Attachment Payload",
+                value=payload_text,
+                inline=False,
+            )
+            if is_image:
+                embed.set_image(url=att.url)
+        elif message.stickers:
+            sticker = message.stickers[0]
+            embed.add_field(
+                name="Sticker Payload",
+                value=f"Name: {sticker.name} (ID: {sticker.id})",
+                inline=False,
+            )
 
         view = TrapActions(self, user.id, guild.id)
         try:
@@ -400,14 +430,12 @@ class Trap(commands.Cog):
                     if (ch := message.guild.get_channel(ch_id))
                 })
 
-                log_content = self._describe_message(message)
                 await self._send_trap_log(
                     message.guild,
                     config["log_channel_id"],
                     user,
-                    log_content,
-                    len(matching),
-                    time_window,
+                    message,
+                    matching,
                     channel_names,
                 )
 
