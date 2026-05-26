@@ -157,8 +157,8 @@ class Trap(commands.Cog):
         message: discord.Message,
         matching: list[tuple[float, str, int, int]],
         channels_used: list[str],
-    ) -> Optional[discord.Message]:
-        """Send log embed while message still exists (URLs valid). Returns the message for later editing."""
+        deleted_count: int = 0,
+    ):
         if not log_channel_id:
             return None
         channel = guild.get_channel(log_channel_id)
@@ -226,13 +226,12 @@ class Trap(commands.Cog):
                 inline=False,
             )
 
-        embed.add_field(name="Messages Purged", value="...", inline=False)
+        embed.add_field(name="Messages Purged", value=str(deleted_count), inline=False)
 
         try:
-            return await channel.send(embed=embed)
+            await channel.send(embed=embed)
         except Exception as e:
             print(f"[Trap] Failed to send log: {e}")
-            return None
 
     # ──────────────────────────────────────────────
     # Listeners
@@ -291,33 +290,24 @@ class Trap(commands.Cog):
                     reason=f"Spam repetition trap: {len(matching)} identical messages in {time_window}s",
                 )
 
-                # 2. Send log while message still exists (URLs, content are valid)
+                # 2. Then purge all their messages
+                deleted_count = await self._purge_user_messages(message.guild, user_id, matching, time_window)
+
+                # 3. Send log with the purge count
                 channel_names = list({
                     ch.name for _, _, ch_id, _ in matching
                     if (ch := message.guild.get_channel(ch_id))
                 })
 
-                log_msg = await self._send_trap_log(
+                await self._send_trap_log(
                     message.guild,
                     config["log_channel_id"],
                     user,
                     message,
                     matching,
                     channel_names,
+                    deleted_count,
                 )
-
-                # 3. Then purge all their messages
-                deleted_count = await self._purge_user_messages(message.guild, user_id, matching, time_window)
-
-                # 4. Update the log with the purge count
-                if log_msg:
-                    embed = log_msg.embeds[0]
-                    # Replace the placeholder "Messages Purged" field
-                    for i, field in enumerate(embed.fields):
-                        if field.name == "Messages Purged":
-                            embed.set_field_at(i, name="Messages Purged", value=str(deleted_count), inline=False)
-                            break
-                    await log_msg.edit(embed=embed)
 
                 print(
                     f"[TRAP] Timed out {user} ({user.id}) from {message.guild.name} — "
