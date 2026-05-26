@@ -1,7 +1,6 @@
 import datetime
 import time
 from typing import Any, Optional
-
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,115 +14,6 @@ DEFAULT_TIME_WINDOW = 10  # seconds
 TIMEOUT_DURATION = 86400  # 24 hours in seconds
 
 
-class TrapActions(discord.ui.View):
-    """Persistent view with Ban and Forgive buttons for trap log messages."""
-
-    def __init__(self, cog: "Trap"):
-        self.cog = cog
-        super().__init__(timeout=None)
-
-        self.ban_btn = discord.ui.Button(
-            label="🔴 Ban Permanently",
-            style=discord.ButtonStyle.danger,
-            custom_id="trap_ban_btn",
-        )
-        self.ban_btn.callback = self.ban_callback
-        self.add_item(self.ban_btn)
-
-        self.forgive_btn = discord.ui.Button(
-            label="🟢 Forgive (Un-timeout)",
-            style=discord.ButtonStyle.success,
-            custom_id="trap_forgive_btn",
-        )
-        self.forgive_btn.callback = self.forgive_callback
-        self.add_item(self.forgive_btn)
-
-    async def _check_admin(self, interaction: discord.Interaction) -> bool:
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "Only administrators can use this action.", ephemeral=True
-            )
-            return False
-        return True
-
-    async def _resolve_target(self, interaction: discord.Interaction):
-        """Look up the stored user/guild from cog's stored actions using message id."""
-        action = self.cog._stored_actions.get(interaction.message.id)
-        if not action:
-            await interaction.response.send_message(
-                "This action is no longer valid.", ephemeral=True
-            )
-            return None, None
-        return action["user_id"], action["guild_id"]
-
-    async def _disable_buttons(self, interaction: discord.Interaction):
-        self.ban_btn.disabled = True
-        self.forgive_btn.disabled = True
-        await interaction.message.edit(view=self)
-
-    async def ban_callback(self, interaction: discord.Interaction):
-        if not await self._check_admin(interaction):
-            return
-
-        user_id, guild_id = await self._resolve_target(interaction)
-        if user_id is None:
-            return
-
-        guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Could not resolve guild.", ephemeral=True)
-            return
-
-        try:
-            user = await guild.fetch_member(user_id)
-            if user:
-                await guild.ban(user, reason=f"Trap ban action by {interaction.user}")
-        except discord.NotFound:
-            pass
-
-        await self._disable_buttons(interaction)
-
-        embed = interaction.message.embeds[0]
-        embed.add_field(
-            name="Processed By",
-            value=f"{interaction.user.mention} — **Banned**",
-            inline=False,
-        )
-        await interaction.message.edit(embed=embed)
-        await interaction.response.edit_message(view=self)
-
-    async def forgive_callback(self, interaction: discord.Interaction):
-        if not await self._check_admin(interaction):
-            return
-
-        user_id, guild_id = await self._resolve_target(interaction)
-        if user_id is None:
-            return
-
-        guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Could not resolve guild.", ephemeral=True)
-            return
-
-        try:
-            user = await guild.fetch_member(user_id)
-            if user:
-                await user.timeout(until=None, reason=f"Trap forgiven by {interaction.user}")
-        except discord.NotFound:
-            pass
-
-        await self._disable_buttons(interaction)
-
-        embed = interaction.message.embeds[0]
-        embed.add_field(
-            name="Processed By",
-            value=f"{interaction.user.mention} — **Forgiven**",
-            inline=False,
-        )
-        await interaction.message.edit(embed=embed)
-        await interaction.response.edit_message(view=self)
-
-
 class Trap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -133,9 +23,6 @@ class Trap(commands.Cog):
 
         # Persistent settings per guild: {guild_id: {enabled, threshold, time_window, log_channel_id}}
         self.trap_config: dict[str, dict[str, Any]] = {}
-
-        # Stored action metadata for persistent views: {message_id: {channel_id, user_id, guild_id}}
-        self._stored_actions: dict[int, dict[str, int]] = {}
 
         # In-memory message log for repetition detection.
         # {guild_id: {user_id: [(timestamp, content, channel_id, message_id), ...]}}
@@ -149,38 +36,25 @@ class Trap(commands.Cog):
     # ──────────────────────────────────────────────
 
     async def load_config(self) -> dict:
-        """Load trap config from the database, separating settings from action metadata."""
+        """Load trap config from the database."""
         try:
             data = await self.db.get_all(self.filename)
             if data:
-                # Pop actions first so it doesn't pollute guild settings
-                self._stored_actions = data.pop("_actions", {})
-                # Everything left is guild config
+                data.pop("_actions", None)
                 self.trap_config = data
             else:
                 self.trap_config = {}
-                self._stored_actions = {}
         except Exception as e:
             print(f"[Trap] Error loading config: {e}")
             self.trap_config = {}
-            self._stored_actions = {}
         return self.trap_config
 
     async def save_config(self):
-        """Save trap config and stored actions to the database."""
+        """Save trap config to the database."""
         try:
-            data = dict(self.trap_config)
-            data["_actions"] = self._stored_actions
-            await self.db.set_all(self.filename, data)
+            await self.db.set_all(self.filename, self.trap_config)
         except Exception as e:
             print(f"[Trap] Error saving config: {e}")
-
-    def _store_action(self, message_id: int, channel_id: int, user_id: int, guild_id: int):
-        self._stored_actions[message_id] = {
-            "channel_id": channel_id,
-            "user_id": user_id,
-            "guild_id": guild_id,
-        }
 
     # ──────────────────────────────────────────────
     # Helpers
@@ -224,11 +98,15 @@ class Trap(commands.Cog):
             entry for entry in log if now - entry[0] <= time_window
         ]
 
-    async def _purge_tracked_messages(
+    async def _purge_user_messages(
         self,
         guild: discord.Guild,
+        user_id: int,
         tracked: list[tuple[float, str, int, int]],
-    ):
+        time_window: float,
+    ) -> int:
+        """Two-phase purge. Returns total number of messages deleted."""
+        total_deleted = 0
         channel_groups: dict[int, list[int]] = {}
         for _, _, channel_id, msg_id in tracked:
             channel_groups.setdefault(channel_id, []).append(msg_id)
@@ -239,14 +117,37 @@ class Trap(commands.Cog):
                 continue
             try:
                 for i in range(0, len(msg_ids), 100):
-                    batch = msg_ids[i:i + 100]
+                    batch = [discord.Object(id=mid) for mid in msg_ids[i:i + 100]]
                     await channel.delete_messages(batch)
+                    total_deleted += len(batch)
             except discord.Forbidden:
                 print(f"[Trap] Missing manage_messages permission in {channel.name}")
             except discord.NotFound:
                 pass
             except Exception as e:
-                print(f"[Trap] Error purging messages in {channel.name}: {e}")
+                print(f"[Trap] Error purging tracked messages in {channel.name}: {e}")
+
+        after = discord.utils.utcnow() - datetime.timedelta(seconds=time_window)
+        for channel_id in channel_groups:
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                continue
+            try:
+                deleted = await channel.purge(
+                    limit=100,
+                    after=after,
+                    check=lambda m: m.author.id == user_id,
+                    bulk=True,
+                )
+                total_deleted += len(deleted)
+            except discord.Forbidden:
+                print(f"[Trap] Missing manage_messages permission in {channel.name}")
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                print(f"[Trap] Error sweeping messages in {channel.name}: {e}")
+
+        return total_deleted
 
     async def _send_trap_log(
         self,
@@ -256,12 +157,13 @@ class Trap(commands.Cog):
         message: discord.Message,
         matching: list[tuple[float, str, int, int]],
         channels_used: list[str],
-    ):
+    ) -> Optional[discord.Message]:
+        """Send log embed while message still exists (URLs valid). Returns the message for later editing."""
         if not log_channel_id:
-            return
+            return None
         channel = guild.get_channel(log_channel_id)
         if not channel:
-            return
+            return None
 
         member = None
         try:
@@ -316,8 +218,6 @@ class Trap(commands.Cog):
                 value=payload_text,
                 inline=False,
             )
-            if is_image:
-                embed.set_image(url=att.url)
         elif message.stickers:
             sticker = message.stickers[0]
             embed.add_field(
@@ -326,13 +226,13 @@ class Trap(commands.Cog):
                 inline=False,
             )
 
-        view = TrapActions(self)
+        embed.add_field(name="Messages Purged", value="...", inline=False)
+
         try:
-            msg = await channel.send(embed=embed, view=view)
-            self._store_action(msg.id, channel.id, user.id, guild.id)
-            await self.save_config()
+            return await channel.send(embed=embed)
         except Exception as e:
             print(f"[Trap] Failed to send log: {e}")
+            return None
 
     # ──────────────────────────────────────────────
     # Listeners
@@ -341,11 +241,6 @@ class Trap(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.load_config()
-
-        # Register ONE persistent view that handles ALL trap action messages
-        # The callbacks resolve user/guild from _stored_actions using the message id
-        view = TrapActions(self)
-        self.bot.add_view(view)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -389,22 +284,20 @@ class Trap(commands.Cog):
             self._pending_actions.add(user_id)
 
             try:
-                # 1. Purge only the tracked spam messages
-                await self._purge_tracked_messages(message.guild, matching)
-
-                # 2. Timeout the user for 24h (on the Member object, not Guild)
+                # 1. Timeout the user FIRST — stops them from sending more
+                timeout_until = discord.utils.utcnow() + datetime.timedelta(seconds=TIMEOUT_DURATION)
                 await user.timeout(
-                    until=discord.utils.utcnow() + datetime.timedelta(seconds=TIMEOUT_DURATION),
+                    timeout_until,
                     reason=f"Spam repetition trap: {len(matching)} identical messages in {time_window}s",
                 )
 
-                # 3. Log to configured channel with action buttons
+                # 2. Send log while message still exists (URLs, content are valid)
                 channel_names = list({
                     ch.name for _, _, ch_id, _ in matching
                     if (ch := message.guild.get_channel(ch_id))
                 })
 
-                await self._send_trap_log(
+                log_msg = await self._send_trap_log(
                     message.guild,
                     config["log_channel_id"],
                     user,
@@ -413,12 +306,25 @@ class Trap(commands.Cog):
                     channel_names,
                 )
 
+                # 3. Then purge all their messages
+                deleted_count = await self._purge_user_messages(message.guild, user_id, matching, time_window)
+
+                # 4. Update the log with the purge count
+                if log_msg:
+                    embed = log_msg.embeds[0]
+                    # Replace the placeholder "Messages Purged" field
+                    for i, field in enumerate(embed.fields):
+                        if field.name == "Messages Purged":
+                            embed.set_field_at(i, name="Messages Purged", value=str(deleted_count), inline=False)
+                            break
+                    await log_msg.edit(embed=embed)
+
                 print(
                     f"[TRAP] Timed out {user} ({user.id}) from {message.guild.name} — "
-                    f"{len(matching)} repeats in {time_window}s"
+                    f"{len(matching)} repeats in {time_window}s, purged {deleted_count} messages"
                 )
             except Exception as e:
-                print(f"[TRAP] Timeout failed for {user} ({user.id}): {e}")
+                print(f"[TRAP] Timeout failed for {user} ({user.id}): {type(e).__name__}: {e}")
             finally:
                 self._message_log.get(guild_id_int, {}).pop(user_id, None)
                 self._pending_actions.discard(user_id)
