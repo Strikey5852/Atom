@@ -24,20 +24,19 @@ class TrapActions(discord.ui.View):
         self.guild_id = guild_id
         super().__init__(timeout=None)
 
-        # Ban button
+        # Static custom_ids — the bot uses _stored_actions to look up context on click
         self.ban_btn = discord.ui.Button(
             label="🔴 Ban Permanently",
             style=discord.ButtonStyle.danger,
-            custom_id=f"trap_ban:{user_id}:{guild_id}",
+            custom_id="trap_ban_btn",
         )
         self.ban_btn.callback = self.ban_callback
         self.add_item(self.ban_btn)
 
-        # Forgive button
         self.forgive_btn = discord.ui.Button(
             label="🟢 Forgive (Un-timeout)",
             style=discord.ButtonStyle.success,
-            custom_id=f"trap_forgive:{user_id}:{guild_id}",
+            custom_id="trap_forgive_btn",
         )
         self.forgive_btn.callback = self.forgive_callback
         self.add_item(self.forgive_btn)
@@ -57,17 +56,27 @@ class TrapActions(discord.ui.View):
         self.forgive_btn.disabled = True
         await interaction.message.edit(view=self)
 
+    def _get_action_context(self, interaction: discord.Interaction) -> tuple[Optional[discord.Guild], Optional[int], Optional[int]]:
+        """Resolve guild and user_id from stored actions."""
+        guild = interaction.guild
+        if not guild:
+            return None, None, None
+        action = self.cog._stored_actions.get(interaction.message.id)
+        if not action:
+            return guild, None, None
+        return guild, action["user_id"], action["guild_id"]
+
     async def ban_callback(self, interaction: discord.Interaction):
         if not await self._check_admin(interaction):
             return
 
-        guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Could not resolve guild.", ephemeral=True)
+        guild, user_id, _ = self._get_action_context(interaction)
+        if not guild or not user_id:
+            await interaction.response.send_message("Could not resolve action context.", ephemeral=True)
             return
 
         try:
-            user = await guild.fetch_member(self.user_id)
+            user = await guild.fetch_member(user_id)
             if user:
                 await guild.ban(user, reason=f"Trap ban action by {interaction.user}")
         except discord.NotFound:
@@ -88,13 +97,13 @@ class TrapActions(discord.ui.View):
         if not await self._check_admin(interaction):
             return
 
-        guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("Could not resolve guild.", ephemeral=True)
+        guild, user_id, _ = self._get_action_context(interaction)
+        if not guild or not user_id:
+            await interaction.response.send_message("Could not resolve action context.", ephemeral=True)
             return
 
         try:
-            user = await guild.fetch_member(self.user_id)
+            user = await guild.fetch_member(user_id)
             if user:
                 await user.timeout(until=None, reason=f"Trap forgiven by {interaction.user}")
         except discord.NotFound:
@@ -141,12 +150,10 @@ class Trap(commands.Cog):
         try:
             data = await self.db.get_all(self.filename)
             if data:
-                # Extract stored actions from the data
+                # Pop actions safely out first so it doesn't pollute guild settings
                 self._stored_actions = data.pop("_actions", {})
-                if isinstance(next(iter(data.values()), None), dict):
-                    self.trap_config = data
-                else:
-                    self.trap_config = {}
+                # Whatever remains is the guild config data
+                self.trap_config = data
             else:
                 self.trap_config = {}
                 self._stored_actions = {}
@@ -417,9 +424,8 @@ class Trap(commands.Cog):
                 # 1. Purge only the tracked spam messages
                 await self._purge_tracked_messages(message.guild, user_id, matching)
 
-                # 2. Timeout the user for 24h instead of banning
-                await message.guild.timeout(
-                    user,
+                # 2. Timeout the user for 24h — use member.timeout(), not guild.timeout()
+                await message.author.timeout(
                     until=discord.utils.utcnow() + datetime.timedelta(seconds=TIMEOUT_DURATION),
                     reason=f"Spam repetition trap: {len(matching)} identical messages in {time_window}s",
                 )
