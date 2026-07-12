@@ -45,9 +45,9 @@ class QOTD(commands.Cog):
         except Exception as e:
             print(f"[QOTD] Error saving: {e}")
 
-    def get_questions_for_guild(self, guild_id: int) -> list:
-        """Get questions for a guild from cache."""
-        data = self.db.get_all_cached(self.filename)
+    async def get_questions_for_guild(self, guild_id: int) -> list:
+        """Get questions for a guild, fetching fresh data if cache is stale."""
+        data = await self.db.get_all(self.filename)
         g = data.get(str(guild_id))
         if not g:
             return []
@@ -174,7 +174,7 @@ class QOTD(commands.Cog):
     @app_commands.describe(question="Question(s) to add (Seperate by newlines; use \\n for slash commands.)")
     async def add_qotd(self, ctx, *, question: str):
         gid = ctx.guild.id
-        questions = self.get_questions_for_guild(gid)
+        questions = await self.get_questions_for_guild(gid)
 
         normalized = question.replace("\\n", "\n")
         parts = [q.strip() for q in normalized.splitlines() if q.strip()]
@@ -193,7 +193,7 @@ class QOTD(commands.Cog):
     @app_commands.describe(number="The question number to remove (from /listqotd)")
     async def remove_qotd(self, ctx, number: int):
         gid = ctx.guild.id
-        questions = self.get_questions_for_guild(gid)
+        questions = await self.get_questions_for_guild(gid)
         if number < 1 or number > len(questions):
             await ctx.send("Invalid question number.")
             return
@@ -207,7 +207,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     async def list_qotd(self, ctx):
         gid = ctx.guild.id
-        questions = self.get_questions_for_guild(gid)
+        questions = await self.get_questions_for_guild(gid)
         if not questions:
             await ctx.send("No questions in the list for this server.")
             return

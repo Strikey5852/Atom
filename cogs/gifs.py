@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -63,11 +64,27 @@ class Gifs(commands.Cog):
 
     async def fetch_gif(self, action: str) -> str:
         """Fetch a random GIF URL for the given action from nekos.best"""
-        async with self.session.get(f"{NEKOS_BASE}{action}") as resp:
-            if resp.status != 200:
+        try:
+            async with self.session.get(
+                f"{NEKOS_BASE}{action}", timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                return data.get("results", [])[0].get("url")
+        except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError):
+            # If the session is closed/stale, create a new one and retry once
+            self.session = aiohttp.ClientSession()
+            try:
+                async with self.session.get(
+                    f"{NEKOS_BASE}{action}", timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+                    return data.get("results", [])[0].get("url")
+            except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError):
                 return None
-            data = await resp.json()
-            return data.get("results", [])[0].get("url")
 
     async def send_action(self, ctx, action: str, member: str=None):
         gif_url = await self.fetch_gif(action)
@@ -381,6 +398,11 @@ class Gifs(commands.Cog):
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     async def cry(self, ctx: commands.Context):
         await self.send_action(ctx, "cry")
+
+    async def cog_unload(self):
+        """Clean up the aiohttp session when the cog is unloaded."""
+        if self.session and not self.session.closed:
+            await self.session.close()
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Gifs(bot))
