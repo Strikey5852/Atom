@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
 # Action definitions — three categories:
-#   MUTUAL_ACTIONS: always require a target
+#   MUTUAL_ACTIONS: optional target (falls back to "you")
 #   SOLO_ACTIONS:   never take a target
 #   BOTH_ACTIONS:   optional target (mutual_template, solo_template)
 # ──────────────────────────────────────────────
@@ -90,36 +90,19 @@ BOTH_ACTIONS = {
 NEKOS_BASE = "https://nekos.best/api/v2/"
 
 
-def _make_description(template: str) -> str:
-    """Build a command description from the action template."""
-    desc = template.format(actor="", target="someone").strip()
-    return desc[0].upper() + desc[1:] if desc else "Send a GIF"
-
-
-def _create_action_command(action: str, template: str, target_mode: str):
+def _create_action_command(action: str, target_mode: str):
     """Create a hybrid command for a gif action.
 
-    target_mode: "required" | "none" | "optional"
+    target_mode: "required" | "none" | "optional" — all take an
+    optional member parameter; when omitted the action is directed
+    at the user themselves.
     """
-    description = _make_description(template)
-
-    if target_mode == "required":
-        async def command(self, ctx: commands.Context, member: discord.Member):
-            await self.send_action(ctx, action, member)
-
-        command = app_commands.describe(
-            member="The user to direct this action at"
-        )(command)
-    elif target_mode == "optional":
-        async def command(self, ctx: commands.Context, member: Optional[discord.Member] = None):
-            await self.send_action(ctx, action, member)
-
-        command = app_commands.describe(
-            member="The user to direct this action at (optional)"
-        )(command)
-    else:  # "none"
+    if target_mode == "none":
         async def command(self, ctx: commands.Context):
             await self.send_action(ctx, action)
+    else:
+        async def command(self, ctx: commands.Context, member: Optional[discord.Member] = None):
+            await self.send_action(ctx, action, member)
 
     command = app_commands.allowed_installs(guilds=True, users=True)(command)
     command = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(command)
@@ -129,7 +112,7 @@ def _create_action_command(action: str, template: str, target_mode: str):
     # to skip both 'self' AND 'ctx' when extracting slash command parameters.
     command.__qualname__ = f"Gifs.{action}_command"
 
-    return commands.hybrid_command(name=action, description=description)(command)
+    return commands.hybrid_command(name=action)(command)
 
 
 class Gifs(commands.Cog):
@@ -162,13 +145,12 @@ class Gifs(commands.Cog):
         """
         new_commands = []
 
-        for action, template in MUTUAL_ACTIONS.items():
-            new_commands.append(_create_action_command(action, template, target_mode="required"))
-        for action, template in SOLO_ACTIONS.items():
-            new_commands.append(_create_action_command(action, template, target_mode="none"))
-        for action, (mutual_tpl, solo_tpl) in BOTH_ACTIONS.items():
-            # Use the mutual template for the description (more informative)
-            new_commands.append(_create_action_command(action, mutual_tpl, target_mode="optional"))
+        for action in MUTUAL_ACTIONS:
+            new_commands.append(_create_action_command(action, target_mode="required"))
+        for action in SOLO_ACTIONS:
+            new_commands.append(_create_action_command(action, target_mode="none"))
+        for action in BOTH_ACTIONS:
+            new_commands.append(_create_action_command(action, target_mode="optional"))
 
         # Add to the cog's command list (__cog_commands__ is a tuple)
         self.__cog_commands__ = self.__cog_commands__ + tuple(new_commands)
@@ -248,11 +230,11 @@ class Gifs(commands.Cog):
 
         # Determine which template to use based on action category
         if action in MUTUAL_ACTIONS:
-            # Always mutual — target should be present, but fall back gracefully
+            # Mututal action — target defaults to "you" when not provided
             if target:
                 content = MUTUAL_ACTIONS[action].format(actor=actor, target=target)
             else:
-                content = (MUTUAL_ACTIONS[action].format(actor="", target="you")).strip().capitalize()
+                content = MUTUAL_ACTIONS[action].format(actor=actor, target="you")
         elif action in SOLO_ACTIONS:
             content = SOLO_ACTIONS[action].format(actor=actor)
         else:  # BOTH_ACTIONS
