@@ -89,6 +89,71 @@ BOTH_ACTIONS = {
 
 NEKOS_BASE = "https://nekos.best/api/v2/"
 
+# Kaomoji descriptions shown in the Discord command picker
+DESCRIPTIONS = {
+    # Mutual actions
+    "shoot": "( ・_・)ノ⌒●~*",
+    "poke": "( ・_・)σ",
+    "tickle": "(く・ω・)く",
+    "yeet": "(ノ°ο°)ノ",
+    "highfive": "( °∀°)人(°∀° )",
+    "feed": "(っ˘ڡ˘ς)",
+    "bite": "(・∀・) ｶﾞﾌﾞｯ",
+    "nom": "( ˘༥˘ )",
+    "cuddle": "(づ｡◕‿‿◕｡)づ",
+    "kick": "(ノ>_<)ノ ┌┛",
+    "hug": "(つ≧▽≦)つ",
+    "kiss": "(*￣3￣)╭",
+    "punch": "(ง •̀_•́)ง",
+    "handshake": "(・_・)人(・_・)",
+    "slap": "( '= ')ノ)- -)",
+    "handhold": "(⁄ ⁄•⁄ω⁄•⁄ ⁄)vv(⁄ ⁄•⁄ω⁄•⁄ ⁄)",
+    "peck": "( ˘ ³˘)♥",
+    "carry": "(⊃｡•́‿•̀｡)⊃",
+    "kabedon": "|(•̀ᴗ•́)✧",
+    "baka": "(ノ°益°)ノ",
+    "bonk": "( ・ω・)⚯",
+    "lappillow": "(◦′ ω ‵◦)",
+    "blowkiss": "( ˘ ³˘)ﾉ",
+    "pat": "(ｏ・_・)ノ(ᴗ_ᴗ。)",
+    # Solo actions
+    "lurk": "(┬┴┬┴┤•_•)",
+    "sleep": "( -_•) zZZ",
+    "clap": "( • ω • )888",
+    "shrug": "¯\\_(ツ)_/¯",
+    "confused": "(・_・?)",
+    "sip": "( ￣ω￣)旦",
+    "blush": "(⁄ ⁄•⁄ω⁄•⁄ ⁄)",
+    "smug": "(¬‿¬)",
+    "think": "(￣ヘ￣)",
+    "wag": "(＾• ω •＾)",
+    "teehee": "( > ▽ < )",
+    "shocked": "(⊙_⊙)",
+    "bleh": "( > 👅 < )",
+    "bored": "(￣～￣;)",
+    "nya": "(=^･ω･^=)",
+    "yawn": "(´O｀)",
+    "facepalm": "(ノ_＜)",
+    "happy": "(＾▽＾)",
+    "angry": "(╬ Ò﹏Ó)",
+    "spin": "(o゜▽゜)o",
+    "shake": "ヽ(°〇°)ﾉ",
+    "run": "ε=ε=┌( >_<)┘",
+    "cry": "(╥﹏╥)",
+    "salute": "(￣^￣)ゞ",
+    "tableflip": "(╯°□°）╯︵ ┻━┻",
+    # Both actions (mutual variant)
+    "stare": "(¬_¬)",
+    "wave": "(￣▽￣)ノ",
+    "smile": "( ^_^ )",
+    "wink": "(＾‿＾)",
+    "nod": "( ・_・)(_ _)",
+    "nope": "( ─_─ )☝️",
+    "dance": "♪(┌・。・)┌",
+    "laugh": "(≧▽≦)",
+    "pout": "(￣ヘ￣;)",
+    "thumbsup": "(b ᵔ▽ᵔ)b",
+}
 
 def _create_action_command(action: str, target_mode: str):
     """Create a hybrid command for a gif action.
@@ -104,6 +169,10 @@ def _create_action_command(action: str, target_mode: str):
         async def command(self, ctx: commands.Context, member: Optional[discord.Member] = None):
             await self.send_action(ctx, action, member)
 
+        command = app_commands.describe(
+            member="The member to direct this action at"
+        )(command)
+
     command = app_commands.allowed_installs(guilds=True, users=True)(command)
     command = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(command)
     command.__name__ = f"{action}_command"
@@ -112,7 +181,10 @@ def _create_action_command(action: str, target_mode: str):
     # to skip both 'self' AND 'ctx' when extracting slash command parameters.
     command.__qualname__ = f"Gifs.{action}_command"
 
-    return commands.hybrid_command(name=action)(command)
+    return commands.hybrid_command(
+        name=action,
+        description=DESCRIPTIONS.get(action, action.capitalize()),
+    )(command)
 
 
 class Gifs(commands.Cog):
