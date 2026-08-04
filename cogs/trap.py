@@ -1,4 +1,5 @@
 import datetime
+import logging
 import time
 from typing import Any, Optional
 import discord
@@ -6,6 +7,8 @@ from discord import app_commands
 from discord.ext import commands
 
 from database import get_database
+
+logger = logging.getLogger(__name__)
 
 
 # Default configuration values
@@ -17,6 +20,7 @@ TIMEOUT_DURATION = 86400  # 24 hours in seconds
 class Trap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        logger.debug("[Trap] Cog initialized")
 
         self.db = get_database()
         self.filename = "trap.json"
@@ -44,8 +48,9 @@ class Trap(commands.Cog):
                 self.trap_config = data
             else:
                 self.trap_config = {}
+            logger.info("[Trap] Loaded config for %d guild(s)", len(self.trap_config))
         except Exception as e:
-            print(f"[Trap] Error loading config: {e}")
+            logger.exception("[Trap] Error loading config: %s", e)
             self.trap_config = {}
         return self.trap_config
 
@@ -54,7 +59,7 @@ class Trap(commands.Cog):
         try:
             await self.db.set_all(self.filename, self.trap_config)
         except Exception as e:
-            print(f"[Trap] Error saving config: {e}")
+            logger.exception("[Trap] Error saving config: %s", e)
 
     # ──────────────────────────────────────────────
     # Helpers
@@ -121,11 +126,11 @@ class Trap(commands.Cog):
                     await channel.delete_messages(batch)
                     total_deleted += len(batch)
             except discord.Forbidden:
-                print(f"[Trap] Missing manage_messages permission in {channel.name}")
+                logger.warning("[Trap] Missing manage_messages permission in %s", channel.name)
             except discord.NotFound:
                 pass
             except Exception as e:
-                print(f"[Trap] Error purging tracked messages in {channel.name}: {e}")
+                logger.exception("[Trap] Error purging tracked messages in %s: %s", channel.name, e)
 
         after = discord.utils.utcnow() - datetime.timedelta(seconds=time_window)
         for channel_id in channel_groups:
@@ -141,11 +146,11 @@ class Trap(commands.Cog):
                 )
                 total_deleted += len(deleted)
             except discord.Forbidden:
-                print(f"[Trap] Missing manage_messages permission in {channel.name}")
+                logger.warning("[Trap] Missing manage_messages permission in %s", channel.name)
             except discord.NotFound:
                 pass
             except Exception as e:
-                print(f"[Trap] Error sweeping messages in {channel.name}: {e}")
+                logger.exception("[Trap] Error sweeping messages in %s: %s", channel.name, e)
 
         return total_deleted
 
@@ -231,7 +236,7 @@ class Trap(commands.Cog):
         try:
             await channel.send(embed=embed)
         except Exception as e:
-            print(f"[Trap] Failed to send log: {e}")
+            logger.exception("[Trap] Failed to send log: %s", e)
 
     # ──────────────────────────────────────────────
     # Listeners
@@ -309,12 +314,12 @@ class Trap(commands.Cog):
                     deleted_count,
                 )
 
-                print(
-                    f"[TRAP] Timed out {user} ({user.id}) from {message.guild.name} — "
-                    f"{len(matching)} repeats in {time_window}s, purged {deleted_count} messages"
+                logger.warning(
+                    "[Trap] Timed out %s (%s) from %s — %d repeats in %ss, purged %d messages",
+                    user, user.id, message.guild.name, len(matching), time_window, deleted_count,
                 )
             except Exception as e:
-                print(f"[TRAP] Timeout failed for {user} ({user.id}): {type(e).__name__}: {e}")
+                logger.exception("[Trap] Timeout failed for %s (%s): %s: %s", user, user.id, type(e).__name__, e)
             finally:
                 self._message_log.get(guild_id_int, {}).pop(user_id, None)
                 self._pending_actions.discard(user_id)
@@ -337,6 +342,7 @@ class Trap(commands.Cog):
         self._set_guild_config(guild_id, enabled=new_state)
         await self.save_config()
         status = "enabled" if new_state else "disabled"
+        logger.info("[Trap] %s toggled trap to %s (guild=%s)", ctx.author, status, ctx.guild.name)
         await ctx.send(f"Spam repetition trap is now **{status}**.")
 
     @commands.hybrid_command(
@@ -366,6 +372,7 @@ class Trap(commands.Cog):
         guild_id = str(ctx.guild.id)
         self._set_guild_config(guild_id, threshold=threshold, time_window=time_window)
         await self.save_config()
+        logger.info("[Trap] %s configured trap: threshold=%d window=%ds (guild=%s)", ctx.author, threshold, time_window, ctx.guild.name)
         await ctx.send(
             f"Trap configured: **{threshold}** identical messages in **{time_window}** seconds."
         )
@@ -382,6 +389,7 @@ class Trap(commands.Cog):
         guild_id = str(ctx.guild.id)
         self._set_guild_config(guild_id, log_channel_id=channel.id)
         await self.save_config()
+        logger.info("[Trap] %s set trap log channel to %s (guild=%s)", ctx.author, channel.name, ctx.guild.name)
         await ctx.send(f"Trap timeout logs will be sent to {channel.mention}.")
 
     @trapset.autocomplete("threshold")

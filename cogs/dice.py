@@ -1,7 +1,11 @@
-from discord import app_commands
-from discord.ext import commands
+import logging
 import random
 import re
+
+from discord import app_commands
+from discord.ext import commands
+
+logger = logging.getLogger(__name__)
 
 MAX_TOTAL_DICE = 1000
 DISCORD_LIMIT = 2000  # Discord’s max message length
@@ -9,17 +13,25 @@ DISCORD_LIMIT = 2000  # Discord’s max message length
 class DiceRoller(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        logger.debug("[Dice] Cog initialized")
 
     @commands.hybrid_command(name="roll",description="Roll dice in NdM format, e.g. 2d6, 1d20+3, or 2d6+1d8-2")
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.describe(dice="The dice to roll in NdM format (e.g. 2d6, 1d20+3, or 2d6+1d8-2)")
     async def roll_dice(self, ctx: commands.Context, dice: str):
+        logger.info(
+            "[Dice] roll invoked: dice='%s' author=%s guild=%s channel=%s",
+            dice, ctx.author, getattr(ctx.guild, "name", None),
+            getattr(ctx.channel, "name", getattr(ctx.channel, "id", None)),
+        )
+
         # Parse dice and modifiers
         pattern = r'([+-]?\d*d\d+|[+-]?\d+)'
         parts = re.findall(pattern, dice.replace(" ", "").lower())
 
         if not parts or not any('d' in p for p in parts):
+            logger.warning("[Dice] Invalid format: dice='%s'", dice)
             await ctx.send("Invalid format! Examples: `2d6`, `1d20+3`, or `2d6+1d8-2`.")
             return
 
@@ -35,12 +47,14 @@ class DiceRoller(commands.Cog):
                     total += mod
                     dice_groups.append({"type": "mod", "value": mod})
                 except ValueError:
+                    logger.warning("[Dice] Invalid number in expression: dice='%s' part='%s'", dice, part)
                     await ctx.send("Invalid number in expression.")
                     return
                 continue
 
             match = re.fullmatch(r'([+-]?)(\d*)d(\d+)', part)
             if not match:
+                logger.warning("[Dice] Invalid part in expression: dice='%s' part='%s'", dice, part)
                 await ctx.send(f"Invalid part in expression: `{part}`")
                 return
 
@@ -51,9 +65,11 @@ class DiceRoller(commands.Cog):
 
             total_dice += num
             if total_dice > MAX_TOTAL_DICE:
+                logger.warning("[Dice] Too many dice: %d exceeds limit %d", total_dice, MAX_TOTAL_DICE)
                 await ctx.send(f"Total number of dice exceeds the limit of {MAX_TOTAL_DICE}.")
                 return
             if num < 1 or sides < 1 or sides > 1000:
+                logger.warning("[Dice] Invalid dice spec: num=%d sides=%d", num, sides)
                 await ctx.send("Dice must have 1–1000 sides, and at least 1 die per group.")
                 return
 
@@ -118,9 +134,11 @@ class DiceRoller(commands.Cog):
 
             # Final fail-safe
             if len(full_message) > DISCORD_LIMIT:
+                logger.error("[Dice] Result too large to display even after truncation: dice='%s'", dice)
                 await ctx.send("Result too large to display even after truncation.")
                 return
 
+        logger.debug("[Dice] Roll completed: dice='%s' total=%d groups=%d", dice, total, len(dice_groups))
         await ctx.send(f"**Result**: {full_message}\n**Total**: {total}")
 
 

@@ -1,8 +1,11 @@
 import asyncio
+import logging
 import discord
 from discord.ext import commands
 from discord import app_commands
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 # Actions that require a target
 TARGET_ACTIONS = {
@@ -60,36 +63,73 @@ NEKOS_BASE = "https://nekos.best/api/v2/"
 class Gifs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.session = aiohttp.ClientSession()
+        self.session = self._create_session()
+
+    @staticmethod
+    def _create_session() -> aiohttp.ClientSession:
+        """Create an aiohttp session with a User-Agent that the API accepts."""
+        return aiohttp.ClientSession(
+            headers={"User-Agent": "curl/8.5.0"}
+        )
 
     async def fetch_gif(self, action: str) -> str:
         """Fetch a random GIF URL for the given action from nekos.best"""
-        try:
-            async with self.session.get(
-                f"{NEKOS_BASE}{action}", timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                return data.get("results", [])[0].get("url")
-        except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError):
-            # If the session is closed/stale, create a new one and retry once
-            self.session = aiohttp.ClientSession()
+        url = f"{NEKOS_BASE}{action}"
+        logger.info("[Gifs] fetch_gif called for action='%s' URL='%s'", action, url)
+
+        for attempt in (1, 2):
             try:
+                logger.debug("[Gifs] Attempt %d: GET %s", attempt, url)
                 async with self.session.get(
-                    f"{NEKOS_BASE}{action}", timeout=aiohttp.ClientTimeout(total=10)
+                    url, timeout=aiohttp.ClientTimeout(total=10)
                 ) as resp:
                     if resp.status != 200:
+                        logger.warning(
+                            "[Gifs] Attempt %d: Non-200 status for %s: %d %s",
+                            attempt, url, resp.status, resp.reason,
+                        )
                         return None
                     data = await resp.json()
-                    return data.get("results", [])[0].get("url")
-            except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError):
-                return None
+                    results = data.get("results", [])
+                    if not results:
+                        logger.warning(
+                            "[Gifs] Attempt %d: 200 OK but 'results' is empty/missing. Raw keys: %s",
+                            attempt, list(data.keys()),
+                        )
+                        return None
+                    gif_url = results[0].get("url")
+                    if not gif_url:
+                        logger.warning(
+                            "[Gifs] Attempt %d: 'results[0]' has no 'url'. Result keys: %s",
+                            attempt, list(results[0].keys()),
+                        )
+                        return None
+                    logger.info("[Gifs] Attempt %d: Got GIF URL: %s", attempt, gif_url)
+                    return gif_url
+            except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError) as exc:
+                logger.exception(
+                    "[Gifs] Attempt %d: Exception while fetching %s: %s: %s",
+                    attempt, url, type(exc).__name__, exc,
+                )
+                if attempt == 1:
+                    # Session may be stale/closed — create a fresh one and retry
+                    logger.info("[Gifs] Recreating aiohttp session and retrying...")
+                    self.session = self._create_session()
+                else:
+                    logger.error("[Gifs] Retry also failed for %s. Giving up.", url)
+        return None
 
     async def send_action(self, ctx, action: str, member: str=None):
+        logger.info(
+            "[Gifs] send_action invoked: action='%s' author=%s guild=%s channel=%s",
+            action, ctx.author, getattr(ctx.guild, "name", None), getattr(ctx.channel, "name", getattr(ctx.channel, "id", None)),
+        )
         gif_url = await self.fetch_gif(action)
         if not gif_url:
+            logger.warning("[Gifs] No GIF URL found for action='%s'. Sending fallback message.", action)
             return await ctx.send(f"Sorry, no GIF found for `{action}`")
+        
+        logger.debug("[Gifs] Sending embed with GIF for action='%s' URL='%s'", action, gif_url)
         
         actor = ctx.author.display_name
         if member:

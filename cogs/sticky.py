@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 
 import discord
@@ -8,11 +9,14 @@ from discord.ext import commands
 
 from database import get_database
 
+logger = logging.getLogger(__name__)
+
 
 class StickyMessage(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._cooldown_channels = set()
+        logger.debug("[Sticky] Cog initialized")
 
         self.db = get_database()
         self.filename = "sticky.json"
@@ -24,8 +28,9 @@ class StickyMessage(commands.Cog):
         """Loads data from the database into memory cache."""
         try:
             self.cached_stickies = await self.db.get_all(self.filename)
+            logger.info("[Sticky] Loaded %d guild(s) from database", len(self.cached_stickies))
         except Exception as e:
-            print(f"[Sticky] Error loading stickies: {e}")
+            logger.exception("[Sticky] Error loading stickies: %s", e)
             self.cached_stickies = {}
         return self.cached_stickies
 
@@ -34,7 +39,7 @@ class StickyMessage(commands.Cog):
         try:
             await self.db.set_all(self.filename, self.cached_stickies)
         except Exception as e:
-            print(f"[Sticky] Critical Error saving stickies: {e}")
+            logger.exception("[Sticky] Critical Error saving stickies: %s", e)
 
     async def repost_sticky(self, channel: discord.TextChannel):
         """Handles the deletion of the old sticky and sending of the new one."""
@@ -64,9 +69,10 @@ class StickyMessage(commands.Cog):
 
             self.cached_stickies[guild_id][channel_id]["last_message_id"] = new_msg.id
             await self.save_to_disk()
+            logger.info("[Sticky] Reposted sticky in channel=%s (new msg=%s)", channel.name, new_msg.id)
 
         except Exception as e:
-            print(f"[Sticky] Error in repost_sticky: {e}")
+            logger.exception("[Sticky] Error in repost_sticky: %s", e)
         finally:
             await asyncio.sleep(1)
             self._cooldown_channels.discard(channel_id)
@@ -102,6 +108,7 @@ class StickyMessage(commands.Cog):
         self._cooldown_channels.add(channel_id)
 
         # Repost the sticky
+        logger.debug("[Sticky] Reposting sticky for channel=%s", message.channel.name)
         await self.repost_sticky(message.channel)
 
     @commands.Cog.listener()
@@ -153,6 +160,10 @@ class StickyMessage(commands.Cog):
 
         # Save to Database
         await self.save_to_disk()
+        logger.info(
+            "[Sticky] Set sticky in channel=%s by %s (guild=%s)",
+            channel.name, ctx.author, ctx.guild.name,
+        )
         await ctx.send(f"Sticky message set in {channel.mention}")
 
     @commands.hybrid_command(
@@ -185,6 +196,10 @@ class StickyMessage(commands.Cog):
             del self.cached_stickies[guild_id]
 
         await self.save_to_disk()
+        logger.info(
+            "[Sticky] Removed sticky from channel=%s by %s (guild=%s)",
+            channel.name, ctx.author, ctx.guild.name,
+        )
         await ctx.send(f"Removed sticky message from {channel.mention}")
 
     @commands.hybrid_command(

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import random
 import time
@@ -11,6 +12,35 @@ from discord import app_commands
 from discord.ext import commands
 
 from database import init_database, close_database
+
+# ──────────────────────────────────────────────
+# Logging Configuration
+# ──────────────────────────────────────────────
+# Global defaults, overridable via environment variables:
+#   COG_LOG_LEVEL=<level>              — default level for ALL cog loggers (DEBUG/INFO/WARNING/ERROR)
+#   COG_LOG_LEVEL_<COG>=<level>        — per-cog override (e.g. COG_LOG_LEVEL_GIFS=DEBUG)
+#
+# Examples:
+#   COG_LOG_LEVEL=WARNING              # Quiet globally
+#   COG_LOG_LEVEL_GIFS=DEBUG           # Verbose only for the gifs cog
+#   COG_LOG_LEVEL_TRAP=ERROR           # Only errors from the trap cog
+
+DEFAULT_COG_LOG_LEVEL = os.getenv("COG_LOG_LEVEL", "INFO").upper()
+ALL_COG_NAMES = ["cats", "dice", "gifs", "qotd", "sticky", "trap"]
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+# Apply per-cog log levels
+for cog_name in ALL_COG_NAMES:
+    env_key = f"COG_LOG_LEVEL_{cog_name.upper()}"
+    level_name = os.getenv(env_key, DEFAULT_COG_LOG_LEVEL).upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.getLogger(f"cogs.{cog_name}").setLevel(level)
+    print(f"[Main] Log level for cogs.{cog_name}: {logging.getLevelName(level)}")
 
 # Maximum number of consecutive connection attempts before giving up
 MAX_RETRIES = 10

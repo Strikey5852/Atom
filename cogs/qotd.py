@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import random
@@ -9,10 +10,13 @@ from apscheduler.triggers.cron import CronTrigger
 
 from database import get_database
 
+logger = logging.getLogger(__name__)
+
 class QOTD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
+        logger.debug("[QOTD] Cog initialized")
         
         self.db = get_database()
         self.filename = "qotd.json"
@@ -43,7 +47,7 @@ class QOTD(commands.Cog):
         try:
             await self.db.set_all(self.filename, data)
         except Exception as e:
-            print(f"[QOTD] Error saving: {e}")
+            logger.exception("[QOTD] Error saving: %s", e)
 
     async def get_questions_for_guild(self, guild_id: int) -> list:
         """Get questions for a guild, fetching fresh data if cache is stale."""
@@ -166,6 +170,7 @@ class QOTD(commands.Cog):
                 CronTrigger(hour=20, minute=00, timezone="Asia/Kolkata"),
             )
             self.scheduler.start()
+            logger.info("[QOTD] Scheduler started (daily 8:00 PM IST).")
 
     @commands.hybrid_command(name="addqotd", description="Add question(s) to the QOTD list. (Seperate by newlines; use \\n for slash commands.)")
     @commands.has_permissions(administrator=True)
@@ -173,6 +178,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(question="Question(s) to add (Seperate by newlines; use \\n for slash commands.)")
     async def add_qotd(self, ctx, *, question: str):
+        logger.info("[QOTD] addqotd invoked by %s (guild=%s)", ctx.author, ctx.guild.name)
         gid = ctx.guild.id
         questions = await self.get_questions_for_guild(gid)
 
@@ -183,6 +189,7 @@ class QOTD(commands.Cog):
             questions.append(q)
 
         await self.set_questions_for_guild(gid, questions)
+        logger.info("[QOTD] Added %d question(s) for guild=%s", len(parts), ctx.guild.name)
         display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(parts))
         await ctx.send(f"Added {len(parts)} question(s) to this server:\n{display}")
 
@@ -192,6 +199,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(number="The question number to remove (from /listqotd)")
     async def remove_qotd(self, ctx, number: int):
+        logger.info("[QOTD] removeqotd invoked by %s (guild=%s) number=%d", ctx.author, ctx.guild.name, number)
         gid = ctx.guild.id
         questions = await self.get_questions_for_guild(gid)
         if number < 1 or number > len(questions):
@@ -199,6 +207,7 @@ class QOTD(commands.Cog):
             return
         removed_question = questions.pop(number - 1)
         await self.set_questions_for_guild(gid, questions)
+        logger.info("[QOTD] Removed question #%d for guild=%s", number, ctx.guild.name)
         await ctx.send(f"Removed question #{number}: `{removed_question}` from this server")
 
     @commands.hybrid_command(name="listqotd", description="Show all current questions")
@@ -206,6 +215,7 @@ class QOTD(commands.Cog):
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def list_qotd(self, ctx):
+        logger.info("[QOTD] listqotd invoked by %s (guild=%s)", ctx.author, ctx.guild.name)
         gid = ctx.guild.id
         questions = await self.get_questions_for_guild(gid)
         if not questions:
@@ -219,6 +229,7 @@ class QOTD(commands.Cog):
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
     async def qotd_now(self, ctx):
+        logger.info("[QOTD] qotdnow invoked by %s (guild=%s)", ctx.author, ctx.guild.name)
         success = await self.send_question(ctx.guild.id)
         if success:
             await ctx.send("Sent a question manually!")
@@ -231,6 +242,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD postings")
     async def set_qotd_channel(self, ctx, channel: discord.TextChannel):
+        logger.info("[QOTD] setqotdchannel by %s -> %s (guild=%s)", ctx.author, channel.name, ctx.guild.name)
         await self.set_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD channel set to {channel.mention}")
 
@@ -240,6 +252,7 @@ class QOTD(commands.Cog):
     @commands.guild_only()
     @app_commands.describe(channel="The text channel for QOTD warnings")
     async def set_qotd_warning_channel(self, ctx, channel: discord.TextChannel):
+        logger.info("[QOTD] setqotdwarn by %s -> %s (guild=%s)", ctx.author, channel.name, ctx.guild.name)
         await self.set_warning_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD warning channel set to {channel.mention}")
 
@@ -261,6 +274,7 @@ class QOTD(commands.Cog):
         data[str(ctx.guild.id)] = guild_data
         self.db.set_all_cached(self.filename, data)
         await self.save_all_guild_questions(data)
+        logger.info("[QOTD] setqotdping by %s -> role %s (guild=%s)", ctx.author, role.name, ctx.guild.name)
         
         await ctx.send(f"QOTD will now ping {role.mention}")
 
