@@ -1,8 +1,5 @@
-import asyncio
 import logging
-import os
-import json
-import aiohttp
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -10,21 +7,26 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from database import get_database
+from shared_http import get_shared_session
 
 logger = logging.getLogger(__name__)
+
 
 class Cats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
         logger.debug("[Cats] Cog initialized")
-        
+
         self.db = get_database()
         self.filename = "cats.json"
-        
+
         self.settings = {}  # In-memory cache
-        
-        self.session = aiohttp.ClientSession()
+
+    @property
+    def session(self):
+        """Get the shared aiohttp session."""
+        return get_shared_session()
 
     async def load_settings(self) -> dict:
         """Load settings from the database."""
@@ -47,7 +49,7 @@ class Cats(commands.Cog):
     async def on_ready(self):
         # Load settings when bot is ready
         await self.load_settings()
-        
+
         if not self.scheduler.running:
             self.scheduler.add_job(
                 self.post_cat_pic,
@@ -61,9 +63,12 @@ class Cats(commands.Cog):
     async def post_cat_pic(self):
         """Post a cat picture to all configured channels."""
         await self.bot.wait_until_ready()
-        
+
         # Fetch image once, reuse for all guilds
-        async with self.session.get("https://api.thecatapi.com/v1/images/search") as resp:
+        async with self.session.get(
+            "https://api.thecatapi.com/v1/images/search",
+            timeout=10,
+        ) as resp:
             if resp.status != 200:
                 logger.warning("[Cats] Scheduled cat pic fetch failed: HTTP %d", resp.status)
                 return
@@ -119,7 +124,7 @@ class Cats(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
-    @app_commands.describe(channel="The text channel to post hourly cat pictures in")    
+    @app_commands.describe(channel="The text channel to post hourly cat pictures in")
     async def set_cat_channel(self, ctx, channel: discord.TextChannel):
         self.settings[str(ctx.guild.id)] = {"channel_id": channel.id}
         await self.save_settings()
@@ -140,10 +145,6 @@ class Cats(commands.Cog):
         else:
             await ctx.send("No cat channel has been set for this server.")
 
-    async def cog_unload(self):
-        """Clean up when cog is unloaded."""
-        if self.session and not self.session.closed:
-            await self.session.close()
 
 async def setup(bot):
     await bot.add_cog(Cats(bot))

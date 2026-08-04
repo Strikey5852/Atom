@@ -16,6 +16,10 @@ DEFAULT_THRESHOLD = 5
 DEFAULT_TIME_WINDOW = 10  # seconds
 TIMEOUT_DURATION = 86400  # 24 hours in seconds
 
+# Maximum number of message entries to keep per user in the in-memory log.
+# Prevents unbounded memory growth for users who send many distinct messages.
+MAX_LOG_ENTRIES_PER_USER = 100
+
 
 class Trap(commands.Cog):
     def __init__(self, bot):
@@ -96,12 +100,15 @@ class Trap(commands.Cog):
             return ""
         return " | ".join(parts)
 
-    def _prune_message_log(self, guild_id: int, user_id: int, time_window: float):
-        now = time.time()
-        log = self._message_log.get(guild_id, {}).get(user_id, [])
-        self._message_log[guild_id][user_id] = [
-            entry for entry in log if now - entry[0] <= time_window
-        ]
+    def _add_message_to_log(
+        self, guild_id: int, user_id: int, entry: tuple[float, str, int, int]
+    ):
+        """Add a message entry to the log for a user, trimming to the cap."""
+        log = self._message_log.setdefault(guild_id, {}).setdefault(user_id, [])
+        log.append(entry)
+        # Trim oldest entries if we exceed the cap
+        if len(log) > MAX_LOG_ENTRIES_PER_USER:
+            del log[: len(log) - MAX_LOG_ENTRIES_PER_USER]
 
     async def _purge_user_messages(
         self,
@@ -273,8 +280,8 @@ class Trap(commands.Cog):
         self._message_log.setdefault(guild_id_int, {})
         self._message_log[guild_id_int].setdefault(user_id, [])
 
-        self._message_log[guild_id_int][user_id].append(
-            (time.time(), signature, message.channel.id, message.id)
+        self._add_message_to_log(
+            guild_id_int, user_id, (time.time(), signature, message.channel.id, message.id)
         )
 
         self._prune_message_log(guild_id_int, user_id, time_window)

@@ -1,7 +1,5 @@
 import asyncio
-import json
 import logging
-import os
 
 import discord
 from discord import app_commands
@@ -79,7 +77,6 @@ class StickyMessage(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-
         if not message.guild or (
             message.author.bot and message.author != self.bot.user
         ):
@@ -143,7 +140,9 @@ class StickyMessage(commands.Cog):
             if old_id:
                 try:
                     await channel.get_partial_message(old_id).delete()
-                except:
+                except discord.NotFound:
+                    pass
+                except discord.HTTPException:
                     pass
 
         # Send fresh sticky
@@ -188,7 +187,9 @@ class StickyMessage(commands.Cog):
         if last_id:
             try:
                 await channel.get_partial_message(last_id).delete()
-            except:
+            except discord.NotFound:
+                pass
+            except discord.HTTPException:
                 pass
 
         del self.cached_stickies[guild_id][channel_id]

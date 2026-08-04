@@ -1,9 +1,13 @@
 import asyncio
 import logging
-import discord
-from discord.ext import commands
-from discord import app_commands
+from typing import Optional
+
 import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from shared_http import get_shared_session
 
 logger = logging.getLogger(__name__)
 
@@ -60,17 +64,71 @@ ACTIONS = {**TARGET_ACTIONS, **NO_TARGET_ACTIONS}
 
 NEKOS_BASE = "https://nekos.best/api/v2/"
 
+
+def _make_description(template: str) -> str:
+    """Build a command description from the action template."""
+    desc = template.format(actor="", target="someone").strip()
+    return desc[0].upper() + desc[1:] if desc else "Send a GIF"
+
+
+def _create_action_command(action: str, template: str, needs_target: bool):
+    """Create a hybrid command for a gif action."""
+    description = _make_description(template)
+
+    if needs_target:
+        async def command(self, ctx, member: Optional[str] = None):
+            await self.send_action(ctx, action, member)
+
+        command = app_commands.describe(
+            member="The user to direct this action at (optional)"
+        )(command)
+    else:
+        async def command(self, ctx):
+            await self.send_action(ctx, action)
+
+    command = app_commands.allowed_installs(guilds=True, users=True)(command)
+    command = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(command)
+    command.__name__ = f"{action}_command"
+
+    return commands.hybrid_command(name=action, description=description)(command)
+
+
 class Gifs(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.session = self._create_session()
 
-    @staticmethod
-    def _create_session() -> aiohttp.ClientSession:
-        """Create an aiohttp session with a User-Agent that the API accepts."""
-        return aiohttp.ClientSession(
-            headers={"User-Agent": "curl/8.5.0"}
-        )
+    async def cog_load(self):
+        """Called when the cog is loaded. Register dynamic commands here
+        because add_command() is not available in __init__."""
+        self._register_dynamic_commands()
+        logger.info("[Gifs] Registered %d dynamic action commands", len(ACTIONS))
+
+    @property
+    def session(self):
+        """Get the shared aiohttp session."""
+        return get_shared_session()
+
+    def _register_dynamic_commands(self):
+        """Register all action commands dynamically from the ACTIONS dict.
+
+        In discord.py 2.6+, add_command() is a Bot method, not a Cog method.
+        The Cog._inject() method calls cog_load() first, then iterates
+        __cog_commands__ to register commands with the bot. So we add the
+        dynamically created commands to the cog's __cog_commands__ tuple here.
+
+        Note: We do NOT add to __cog_app_commands__ because bot.add_command()
+        for hybrid commands already registers the app_command to the tree.
+        Adding to both would cause CommandAlreadyRegistered errors.
+        """
+        new_commands = []
+
+        for action, template in TARGET_ACTIONS.items():
+            new_commands.append(_create_action_command(action, template, needs_target=True))
+        for action, template in NO_TARGET_ACTIONS.items():
+            new_commands.append(_create_action_command(action, template, needs_target=False))
+
+        # Add to the cog's command list (__cog_commands__ is a tuple)
+        self.__cog_commands__ = self.__cog_commands__ + tuple(new_commands)
 
     async def fetch_gif(self, action: str) -> str:
         """Fetch a random GIF URL for the given action from nekos.best"""
@@ -79,8 +137,9 @@ class Gifs(commands.Cog):
 
         for attempt in (1, 2):
             try:
+                session = self.session
                 logger.debug("[Gifs] Attempt %d: GET %s", attempt, url)
-                async with self.session.get(
+                async with session.get(
                     url, timeout=aiohttp.ClientTimeout(total=10)
                 ) as resp:
                     if resp.status != 200:
@@ -107,43 +166,42 @@ class Gifs(commands.Cog):
                     logger.info("[Gifs] Attempt %d: Got GIF URL: %s", attempt, gif_url)
                     return gif_url
             except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError) as exc:
-                logger.exception(
+                logger.warning(
                     "[Gifs] Attempt %d: Exception while fetching %s: %s: %s",
                     attempt, url, type(exc).__name__, exc,
                 )
                 if attempt == 1:
-                    # Session may be stale/closed — create a fresh one and retry
-                    logger.info("[Gifs] Recreating aiohttp session and retrying...")
-                    self.session = self._create_session()
+                    logger.info("[Gifs] Retrying...")
                 else:
                     logger.error("[Gifs] Retry also failed for %s. Giving up.", url)
         return None
 
-    async def send_action(self, ctx, action: str, member: str=None):
+    async def send_action(self, ctx, action: str, member: Optional[str] = None):
         logger.info(
             "[Gifs] send_action invoked: action='%s' author=%s guild=%s channel=%s",
-            action, ctx.author, getattr(ctx.guild, "name", None), getattr(ctx.channel, "name", getattr(ctx.channel, "id", None)),
+            action, ctx.author, getattr(ctx.guild, "name", None),
+            getattr(ctx.channel, "name", getattr(ctx.channel, "id", None)),
         )
         gif_url = await self.fetch_gif(action)
         if not gif_url:
             logger.warning("[Gifs] No GIF URL found for action='%s'. Sending fallback message.", action)
             return await ctx.send(f"Sorry, no GIF found for `{action}`")
-        
+
         logger.debug("[Gifs] Sending embed with GIF for action='%s' URL='%s'", action, gif_url)
-        
+
         actor = ctx.author.display_name
+        target = "you"
+
+        # Resolve the target from the member argument (works for both prefix & slash)
         if member:
-            try:
-                member = await commands.MemberConverter().convert(ctx, member)
-            except commands.BadArgument:
-                member = None
-        
-        if ctx.message.mentions: 
-            target = ctx.message.mentions[0].display_name
-        elif member:
-            target = member.mention
-        else:
-            target = "you"
+            if isinstance(member, discord.Member):
+                target = member.mention
+            else:
+                try:
+                    converted = await commands.MemberConverter().convert(ctx, member)
+                    target = converted.mention
+                except commands.BadArgument:
+                    pass  # fall back to "you"
 
         if action in NO_TARGET_ACTIONS:
             content = ACTIONS[action].format(actor=actor)
@@ -159,290 +217,6 @@ class Gifs(commands.Cog):
         embed.set_image(url=gif_url)
         await ctx.send(content=f"***{content}***", embed=embed)
 
-    # --- Hybrid commands for each action ---
-    @commands.hybrid_command(name="shoot", description="Shoot someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to shoot at")
-    async def shoot(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "shoot", member)
-
-    @commands.hybrid_command(name="shrug", description="Shrug at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to shrug at")
-    async def shrug(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "shrug", member)
-
-    @commands.hybrid_command(name="stare", description="Stare at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to stare at")
-    async def stare(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "stare", member)
-
-    @commands.hybrid_command(name="wave", description="Wave at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to wave at")
-    async def wave(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "wave", member)
-
-    @commands.hybrid_command(name="poke", description="Poke someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to poke")
-    async def poke(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "poke", member)
-
-    @commands.hybrid_command(name="smile", description="Smile at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to smile at")
-    async def smile(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "smile", member)
-
-    @commands.hybrid_command(name="peck", description="Peck someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to peck")
-    async def peck(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "peck", member)
-
-    @commands.hybrid_command(name="wink", description="Wink at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to wink at")
-    async def wink(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "wink", member)
-
-    @commands.hybrid_command(name="blush", description="Blush at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to blush at")
-    async def blush(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "blush", member)
-
-    @commands.hybrid_command(name="smug", description="Look smug at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to look smug at")
-    async def smug(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "smug", member)
-
-    @commands.hybrid_command(name="tickle", description="Tickle someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to tickle")
-    async def tickle(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "tickle", member)
-
-    @commands.hybrid_command(name="yeet", description="Yeet someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to yeet")
-    async def yeet(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "yeet", member)
-
-    @commands.hybrid_command(name="highfive", description="Highfive someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to highfive")
-    async def highfive(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "highfive", member)
-
-    @commands.hybrid_command(name="feed", description="Feed someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to feed")
-    async def feed(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "feed", member)
-
-    @commands.hybrid_command(name="bite", description="Bite someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to bite")
-    async def bite(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "bite", member)
-
-    @commands.hybrid_command(name="nom", description="Nom on someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to nom on")
-    async def nom(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "nom", member)
-
-    @commands.hybrid_command(name="facepalm", description="Facepalm at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to facepalm at")
-    async def facepalm(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "facepalm", member)
-
-    @commands.hybrid_command(name="cuddle", description="Cuddle someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to cuddle")
-    async def cuddle(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "cuddle", member)
-
-    @commands.hybrid_command(name="kick", description="Kick someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to kick")
-    async def kick(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "kick", member)
-
-    @commands.hybrid_command(name="hug", description="Hug someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to hug")
-    async def hug(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "hug", member)
-
-    @commands.hybrid_command(name="pat", description="Pat someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to pat")
-    async def pat(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "pat", member)
-
-    @commands.hybrid_command(name="angry", description="Be angry at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to be angry at")
-    async def angry(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "angry", member)
-
-    @commands.hybrid_command(name="nod", description="Nod at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to nod at")
-    async def nod(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "nod", member)
-
-    @commands.hybrid_command(name="nope", description="Say nope to someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to say nope to")
-    async def nope(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "nope", member)
-
-    @commands.hybrid_command(name="kiss", description="Kiss someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to kiss")
-    async def kiss(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "kiss", member)
-
-    @commands.hybrid_command(name="dance", description="Dance with someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to dance with")
-    async def dance(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "dance", member)
-
-    @commands.hybrid_command(name="punch", description="Punch someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to punch")
-    async def punch(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "punch", member)
-
-    @commands.hybrid_command(name="handshake", description="Shake hands with someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to shake hands with")
-    async def handshake(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "handshake", member)
-
-    @commands.hybrid_command(name="slap", description="Slap someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to slap")
-    async def slap(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "slap", member)
-
-    @commands.hybrid_command(name="pout", description="Pout at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to pout at")
-    async def pout(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "pout", member)
-
-    @commands.hybrid_command(name="handhold", description="Hold hands with someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to hold hands with")
-    async def handhold(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "handhold", member)
-
-    @commands.hybrid_command(name="thumbsup", description="Give a thumbs up to someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to give a thumbs up to")
-    async def thumbsup(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "thumbsup", member)
-
-    @commands.hybrid_command(name="laugh", description="Laugh at someone")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.describe(member="The member you want to laugh at")
-    async def laugh(self, ctx: commands.Context, member: str=None):
-        await self.send_action(ctx, "laugh", member)
-
-    @commands.hybrid_command(name="lurk", description="Lurk around")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def lurk(self, ctx: commands.Context):
-        await self.send_action(ctx, "lurk")
-
-    @commands.hybrid_command(name="sleep", description="Sleep")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def sleep(self, ctx: commands.Context):
-        await self.send_action(ctx, "sleep")
-
-    @commands.hybrid_command(name="think", description="Think")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def think(self, ctx: commands.Context):
-        await self.send_action(ctx, "think")
-
-    @commands.hybrid_command(name="bored", description="Be bored")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def bored(self, ctx: commands.Context):
-        await self.send_action(ctx, "bored")
-
-    @commands.hybrid_command(name="yawn", description="Yawn")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def yawn(self, ctx: commands.Context):    
-        await self.send_action(ctx, "yawn")
-
-    @commands.hybrid_command(name="happy", description="Be happy")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def happy(self, ctx: commands.Context):
-        await self.send_action(ctx, "happy")
-
-    @commands.hybrid_command(name="run", description="Run")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def run(self, ctx: commands.Context):
-        await self.send_action(ctx, "run")
-
-    @commands.hybrid_command(name="cry", description="Cry")
-    @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    async def cry(self, ctx: commands.Context):
-        await self.send_action(ctx, "cry")
-
-    async def cog_unload(self):
-        """Clean up the aiohttp session when the cog is unloaded."""
-        if self.session and not self.session.closed:
-            await self.session.close()
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Gifs(bot))

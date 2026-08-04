@@ -1,7 +1,6 @@
 import logging
-import os
-import json
 import random
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -12,12 +11,20 @@ from database import get_database
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_GUILD_DATA = {
+    "questions": [],
+    "channel_id": None,
+    "warning_channel_id": None,
+    "ping_role_id": None,
+}
+
+
 class QOTD(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.scheduler = AsyncIOScheduler()
         logger.debug("[QOTD] Cog initialized")
-        
+
         self.db = get_database()
         self.filename = "qotd.json"
 
@@ -37,15 +44,15 @@ class QOTD(commands.Cog):
                 "questions": guild_data.get("questions", []),
                 "channel_id": guild_data.get("channel_id"),
                 "warning_channel_id": guild_data.get("warning_channel_id"),
-                "ping_role_id": guild_data.get("ping_role_id")
+                "ping_role_id": guild_data.get("ping_role_id"),
             }
 
         return normalized
 
-    async def save_all_guild_questions(self, data: dict):
+    async def save_all_guild_questions(self, data: dict, immediate: bool = False):
         """Save all guild questions to the database."""
         try:
-            await self.db.set_all(self.filename, data)
+            await self.db.set_all(self.filename, data, immediate=immediate)
         except Exception as e:
             logger.exception("[QOTD] Error saving: %s", e)
 
@@ -60,7 +67,7 @@ class QOTD(commands.Cog):
     async def set_questions_for_guild(self, guild_id: int, questions: list):
         """Set questions for a guild and save to database."""
         data = self.db.get_all_cached(self.filename)
-        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g = data.get(str(guild_id), dict(DEFAULT_GUILD_DATA))
         g["questions"] = questions
         data[str(guild_id)] = g
         self.db.set_all_cached(self.filename, data)
@@ -69,7 +76,7 @@ class QOTD(commands.Cog):
     async def set_channel_for_guild(self, guild_id: int, channel_id: int):
         """Set the QOTD channel for a guild."""
         data = self.db.get_all_cached(self.filename)
-        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g = data.get(str(guild_id), dict(DEFAULT_GUILD_DATA))
         g["channel_id"] = channel_id
         data[str(guild_id)] = g
         self.db.set_all_cached(self.filename, data)
@@ -78,7 +85,7 @@ class QOTD(commands.Cog):
     async def set_warning_channel_for_guild(self, guild_id: int, channel_id: int):
         """Set the warning channel for a guild."""
         data = self.db.get_all_cached(self.filename)
-        g = data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        g = data.get(str(guild_id), dict(DEFAULT_GUILD_DATA))
         g["warning_channel_id"] = channel_id
         data[str(guild_id)] = g
         self.db.set_all_cached(self.filename, data)
@@ -87,14 +94,14 @@ class QOTD(commands.Cog):
     def get_guild_settings(self, guild_id: int):
         """Get settings for a guild from cache."""
         data = self.db.get_all_cached(self.filename)
-        return data.get(str(guild_id), {"questions": [], "channel_id": None, "warning_channel_id": None})
+        return data.get(str(guild_id), dict(DEFAULT_GUILD_DATA))
 
     async def send_warning(self, guild_id: int, message: str):
         """Send a warning message to the warning channel."""
         data = self.db.get_all_cached(self.filename)
         guild_data = data.get(str(guild_id), {})
         warn_id = guild_data.get("warning_channel_id")
-        
+
         if warn_id:
             warning_channel = self.bot.get_channel(warn_id)
             if warning_channel:
@@ -132,7 +139,7 @@ class QOTD(commands.Cog):
                 role = guild.get_role(ping_role_id)
                 if role:
                     ping_text = f"{role.mention}"
-            
+
             # Send the question with optional ping
             await channel.send(f"{ping_text} {question}")
         except Exception:
@@ -148,7 +155,7 @@ class QOTD(commands.Cog):
                 elif len(questions) == 1:
                     await warn_channel.send("Only **1 question** remaining in this server's list!")
 
-        # Save changes
+        # Save changes (debounced)
         self.db.set_all_cached(self.filename, data)
         await self.save_all_guild_questions(data)
         return True
@@ -162,7 +169,7 @@ class QOTD(commands.Cog):
     async def on_ready(self):
         # Load data from database
         await self.load_all_guild_questions()
-        
+
         if not self.scheduler.running:
             # Schedule every day at 08:00 PM IST
             self.scheduler.add_job(
@@ -221,8 +228,41 @@ class QOTD(commands.Cog):
         if not questions:
             await ctx.send("No questions in the list for this server.")
             return
-        display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
-        await ctx.send(f"**Current Questions for this server:**\n{display}")
+
+        # Build all lines first
+        lines = [f"{i+1}. {q}" for i, q in enumerate(questions)]
+
+        # If everything fits in one message, send it simply
+        display = "\n".join(lines)
+        if len(display) <= 1800:
+            await ctx.send(f"**Current Questions for this server:**\n{display}")
+            return
+
+        # Otherwise, chunk into multiple messages under the Discord limit
+        total_pages = 1
+        current_chunk = []
+        current_len = 0
+        header = "**Current Questions for this server:**"
+
+        for line in lines:
+            line_len = len(line) + 1  # +1 for newline
+            if current_len + line_len > 1800 and current_chunk:
+                page_text = "\n".join(current_chunk)
+                await ctx.send(f"{header}\n{page_text}\n\n*Page {total_pages}*")
+                current_chunk = [line]
+                current_len = line_len
+                total_pages += 1
+            else:
+                current_chunk.append(line)
+                current_len += line_len
+
+        # Send the final chunk
+        if current_chunk:
+            page_text = "\n".join(current_chunk)
+            footer = f"\n\n*Page {total_pages}*"
+            await ctx.send(f"{header}\n{page_text}{footer}")
+
+        logger.info("[QOTD] listqotd displayed %d questions in %d pages (guild=%s)", len(questions), total_pages, ctx.guild.name)
 
     @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
     @commands.has_permissions(administrator=True)
@@ -264,18 +304,13 @@ class QOTD(commands.Cog):
     async def set_qotd_ping(self, ctx, role: discord.Role):
         # Save the ping role setting for this guild
         data = self.db.get_all_cached(self.filename)
-        guild_data = data.setdefault(str(ctx.guild.id), {
-            "questions": [],
-            "channel_id": None,
-            "warning_channel_id": None,
-            "ping_role_id": None
-        })
+        guild_data = data.setdefault(str(ctx.guild.id), dict(DEFAULT_GUILD_DATA))
         guild_data["ping_role_id"] = role.id
         data[str(ctx.guild.id)] = guild_data
         self.db.set_all_cached(self.filename, data)
         await self.save_all_guild_questions(data)
         logger.info("[QOTD] setqotdping by %s -> role %s (guild=%s)", ctx.author, role.name, ctx.guild.name)
-        
+
         await ctx.send(f"QOTD will now ping {role.mention}")
 
     @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
@@ -306,6 +341,7 @@ class QOTD(commands.Cog):
         else:
             parts.append("Ping role: Not set")
         await ctx.send("\n".join(parts))
+
 
 async def setup(bot):
     await bot.add_cog(QOTD(bot))

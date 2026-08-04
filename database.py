@@ -5,14 +5,17 @@ Provides persistent storage using GitHub Gists with local caching.
 
 import asyncio
 import json
+import logging
 import os
 import time
 from typing import Any, Optional
 
 import aiohttp
-from dotenv import load_dotenv
 
-load_dotenv()
+logger = logging.getLogger(__name__)
+
+# GitHub API rate-limit responses
+RATE_LIMIT_STATUSES = {403, 429}
 
 
 class GistDatabase:
@@ -27,9 +30,11 @@ class GistDatabase:
         self._lock = asyncio.Lock()
         self._initialized = False
         self._auto_create = os.getenv("GIST_AUTO_CREATE", "true").lower() == "true"
+        self._pending_saves: dict[str, asyncio.Task] = {}
 
         # Cache settings
         self._cache_ttl = 60  # seconds
+        self._save_debounce = 2.0  # seconds
 
         if not self.token:
             raise ValueError("GITHUB_TOKEN environment variable is required")
@@ -47,7 +52,12 @@ class GistDatabase:
         return self._session
 
     async def close(self):
-        """Close the aiohttp session."""
+        """Close the aiohttp session and cancel pending saves."""
+        # Cancel any pending debounced saves
+        for task in self._pending_saves.values():
+            task.cancel()
+        self._pending_saves.clear()
+
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -77,7 +87,7 @@ class GistDatabase:
                         # Update .env file with new gist ID
                         self._update_env_file()
                         self._initialized = True
-                        print(f"[Database] Created new gist with ID: {self.gist_id}")
+                        logger.info("Created new gist with ID: %s", self.gist_id)
                         return True
                     else:
                         raise RuntimeError("Failed to create new gist")
@@ -87,11 +97,11 @@ class GistDatabase:
                     )
 
             except Exception as e:
-                print(f"[Database] Initialization failed: {e}")
+                logger.error("Initialization failed: %s", e)
                 raise
 
     async def _fetch_gist(self) -> bool:
-        """Fetch gist data and populate cache."""
+        """Fetch gist data and populate cache. Caller must hold the lock."""
         try:
             session = await self._get_session()
             url = f"https://api.github.com/gists/{self.gist_id}"
@@ -110,21 +120,29 @@ class GistDatabase:
                             self._cache[filename] = {}
                         self._cache_timestamps[filename] = time.time()
 
-                    print(
-                        f"[Database] Loaded gist with {len(files)} files: {list(files.keys())}"
+                    logger.info(
+                        "Loaded gist with %d files: %s",
+                        len(files), list(files.keys()),
                     )
                     return True
                 elif response.status == 404:
-                    print(f"[Database] Gist {self.gist_id} not found")
+                    logger.warning("Gist %s not found", self.gist_id)
+                    return False
+                elif response.status in RATE_LIMIT_STATUSES:
+                    logger.warning(
+                        "GitHub rate limited fetching gist: %d %s",
+                        response.status, response.reason,
+                    )
                     return False
                 else:
-                    print(
-                        f"[Database] Failed to fetch gist: {response.status} {response.reason}"
+                    logger.warning(
+                        "Failed to fetch gist: %d %s",
+                        response.status, response.reason,
                     )
                     return False
 
         except Exception as e:
-            print(f"[Database] Error fetching gist: {e}")
+            logger.error("Error fetching gist: %s", e)
             return False
 
     async def _create_gist(self) -> Optional[str]:
@@ -155,14 +173,21 @@ class GistDatabase:
                         self._cache_timestamps[filename] = time.time()
 
                     return gist_id
+                elif response.status in RATE_LIMIT_STATUSES:
+                    logger.warning(
+                        "GitHub rate limited creating gist: %d %s",
+                        response.status, response.reason,
+                    )
+                    return None
                 else:
-                    print(
-                        f"[Database] Failed to create gist: {response.status} {response.reason}"
+                    logger.warning(
+                        "Failed to create gist: %d %s",
+                        response.status, response.reason,
                     )
                     return None
 
         except Exception as e:
-            print(f"[Database] Error creating gist: {e}")
+            logger.error("Error creating gist: %s", e)
             return None
 
     def _update_env_file(self):
@@ -195,8 +220,8 @@ class GistDatabase:
         age = time.time() - self._cache_timestamps[filename]
         return age < self._cache_ttl
 
-    async def _save_gist(self, filename: str):
-        """Save a specific file to the gist."""
+    async def _save_gist(self, filename: str) -> bool:
+        """Save a specific file to the gist. Returns True on success."""
         try:
             session = await self._get_session()
             url = f"https://api.github.com/gists/{self.gist_id}"
@@ -210,16 +235,25 @@ class GistDatabase:
             async with session.patch(url, json=payload) as response:
                 if response.status in (200, 201):
                     self._cache_timestamps[filename] = time.time()
-                else:
-                    print(
-                        f"[Database] Failed to save {filename}: {response.status} {response.reason}"
+                    return True
+                elif response.status in RATE_LIMIT_STATUSES:
+                    logger.warning(
+                        "GitHub rate limited saving %s: %d %s",
+                        filename, response.status, response.reason,
                     )
+                else:
+                    logger.warning(
+                        "Failed to save %s: %d %s",
+                        filename, response.status, response.reason,
+                    )
+                return False
 
         except Exception as e:
-            print(f"[Database] Error saving {filename}: {e}")
+            logger.error("Error saving %s: %s", filename, e)
+            return False
 
-    async def _save_gist_multiple(self, filenames: list[str]):
-        """Save multiple files to the gist in one request."""
+    async def _save_gist_multiple(self, filenames: list[str]) -> bool:
+        """Save multiple files to the gist in one request. Returns True on success."""
         try:
             session = await self._get_session()
             url = f"https://api.github.com/gists/{self.gist_id}"
@@ -235,13 +269,42 @@ class GistDatabase:
                 if response.status in (200, 201):
                     for filename in filenames:
                         self._cache_timestamps[filename] = time.time()
-                else:
-                    print(
-                        f"[Database] Failed to save files: {response.status} {response.reason}"
+                    return True
+                elif response.status in RATE_LIMIT_STATUSES:
+                    logger.warning(
+                        "GitHub rate limited saving files: %d %s",
+                        response.status, response.reason,
                     )
+                else:
+                    logger.warning(
+                        "Failed to save files: %d %s",
+                        response.status, response.reason,
+                    )
+                return False
 
         except Exception as e:
-            print(f"[Database] Error saving files: {e}")
+            logger.error("Error saving files: %s", e)
+            return False
+
+    async def _debounced_save(self, filename: str):
+        """Schedule a debounced save for a file."""
+        # Cancel any existing pending save for this file
+        existing = self._pending_saves.get(filename)
+        if existing and not existing.done():
+            existing.cancel()
+
+        async def _do_save():
+            try:
+                await asyncio.sleep(self._save_debounce)
+                async with self._lock:
+                    await self._save_gist(filename)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._pending_saves.pop(filename, None)
+
+        task = asyncio.create_task(_do_save())
+        self._pending_saves[filename] = task
 
     # Public API methods
 
@@ -252,7 +315,10 @@ class GistDatabase:
 
         # Use cache if valid, otherwise fetch fresh
         if not self._is_cache_valid(filename):
-            await self._fetch_gist()
+            async with self._lock:
+                # Re-check under lock (another coroutine may have refreshed)
+                if not self._is_cache_valid(filename):
+                    await self._fetch_gist()
 
         data = self._cache.get(filename, {})
         return data.get(key, default)
@@ -273,6 +339,8 @@ class GistDatabase:
 
             if immediate:
                 await self._save_gist(filename)
+            else:
+                await self._debounced_save(filename)
 
     async def get_all(self, filename: str) -> dict:
         """Get all data from a gist file."""
@@ -281,7 +349,10 @@ class GistDatabase:
 
         # Use cache if valid, otherwise fetch fresh
         if not self._is_cache_valid(filename):
-            await self._fetch_gist()
+            async with self._lock:
+                # Re-check under lock (another coroutine may have refreshed)
+                if not self._is_cache_valid(filename):
+                    await self._fetch_gist()
 
         return self._cache.get(filename, {}).copy()
 
@@ -296,6 +367,8 @@ class GistDatabase:
 
             if immediate:
                 await self._save_gist(filename)
+            else:
+                await self._debounced_save(filename)
 
     async def save(self, filename: str):
         """Manually trigger save for a file."""
@@ -312,6 +385,13 @@ class GistDatabase:
 
         async with self._lock:
             await self._save_gist_multiple(filenames)
+
+    async def flush(self):
+        """Force-flush all pending debounced saves."""
+        # Take a snapshot of pending tasks
+        tasks = list(self._pending_saves.values())
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def get_cached(self, filename: str, key: str, default: Any = None) -> Any:
         """Get a value from cache without fetching from gist."""
@@ -360,5 +440,6 @@ async def close_database():
     """Close the global database instance."""
     global _db
     if _db is not None:
+        await _db.flush()
         await _db.close()
         _db = None

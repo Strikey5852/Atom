@@ -1,7 +1,10 @@
+import logging
 import os
 import threading
 
 from flask import Flask, jsonify
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -23,4 +26,5 @@ def start():
     """Launch the Flask server in a background daemon thread."""
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
-    print(f"[Server] Flask health-check server started on port {os.getenv('PORT', 8080)}")
+    port = os.getenv("PORT", 8080)
+    logger.info("Flask health-check server started on port %s", port)

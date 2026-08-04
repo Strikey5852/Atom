@@ -3,15 +3,21 @@ import logging
 import os
 import random
 import time
+from pathlib import Path
 
 import aiohttp
 import server
+from dotenv import load_dotenv
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from database import init_database, close_database
+from shared_http import close_shared_session
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ──────────────────────────────────────────────
 # Logging Configuration
@@ -34,13 +40,15 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+logger = logging.getLogger("main")
+
 # Apply per-cog log levels
 for cog_name in ALL_COG_NAMES:
     env_key = f"COG_LOG_LEVEL_{cog_name.upper()}"
     level_name = os.getenv(env_key, DEFAULT_COG_LOG_LEVEL).upper()
     level = getattr(logging, level_name, logging.INFO)
     logging.getLogger(f"cogs.{cog_name}").setLevel(level)
-    print(f"[Main] Log level for cogs.{cog_name}: {logging.getLevelName(level)}")
+    logger.info("Log level for cogs.%s: %s", cog_name, logging.getLevelName(level))
 
 # Maximum number of consecutive connection attempts before giving up
 MAX_RETRIES = 10
@@ -64,13 +72,13 @@ async def start_bot_with_retry(token: str) -> None:
                 OSError,
                 aiohttp.ClientError) as exc:
             if attempt == MAX_RETRIES:
-                print(f"[Main] All {MAX_RETRIES} connection attempts exhausted. Giving up.")
+                logger.error("All %d connection attempts exhausted. Giving up.", MAX_RETRIES)
                 raise
 
             delay = BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 2)
-            print(
-                f"[Main] Connection attempt {attempt}/{MAX_RETRIES} failed: {exc}\n"
-                f"       Retrying in {delay:.1f} seconds..."
+            logger.warning(
+                "Connection attempt %d/%d failed: %s\nRetrying in %.1f seconds...",
+                attempt, MAX_RETRIES, exc, delay,
             )
             await asyncio.sleep(delay)
         except Exception:
@@ -80,7 +88,7 @@ async def start_bot_with_retry(token: str) -> None:
 # Main bot entrypoint
 bot = commands.Bot(
     command_prefix=">",  # Prefix for non-slash (text) commands
-    intents=discord.Intents.all(),
+    intents=discord.Intents.default() | discord.Intents(message_content=True),
 )
 
 
@@ -89,21 +97,21 @@ async def on_ready():
     # Initialize database
     try:
         await init_database()
-        print("[Main] Database initialized successfully")
+        logger.info("Database initialized successfully")
     except Exception as e:
-        print(f"[Main] Failed to initialize database: {e}")
+        logger.error("Failed to initialize database: %s", e)
         return
 
-    print(f"Logged in as {bot.user}")
+    logger.info("Logged in as %s", bot.user)
 
     # Sync commands after bot is ready
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} commands")
+        logger.info("Synced %d commands", len(synced))
         # Print out the names of synced commands for verification
-        print("Synced command names:", [cmd.name for cmd in synced])
+        logger.info("Synced command names: %s", [cmd.name for cmd in synced])
     except Exception as e:
-        print(f"Error syncing commands: {e}")
+        logger.error("Error syncing commands: %s", e)
 
 
 @commands.hybrid_command(name="ping", description="Check bot latency")
@@ -128,12 +136,13 @@ bot.add_command(ping)
 
 
 async def load_cogs(bot):
-    for root, _, files in os.walk("cogs"):
-        for file in files:
-            if file.endswith(".py"):
-                module = (root + "\\" + file)[:-3].replace("\\", ".")
-                await bot.load_extension(module)
-                print(f"Loaded cog: {module}")
+    cogs_dir = Path("cogs")
+    for path in sorted(cogs_dir.glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        module = f"cogs.{path.stem}"
+        await bot.load_extension(module)
+        logger.info("Loaded cog: %s", module)
 
 
 async def main():
@@ -144,12 +153,13 @@ async def main():
     TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         raise RuntimeError("TOKEN environment variable is not set")
-    
+
     try:
         await start_bot_with_retry(TOKEN)
     finally:
-        # Clean up database connection
+        # Clean up database and shared session
         await close_database()
+        await close_shared_session()
 
 
 asyncio.run(main())
