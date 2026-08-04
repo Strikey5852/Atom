@@ -11,56 +11,81 @@ from shared_http import get_shared_session
 
 logger = logging.getLogger(__name__)
 
-# Actions that require a target
-TARGET_ACTIONS = {
+# ──────────────────────────────────────────────
+# Action definitions — three categories:
+#   MUTUAL_ACTIONS: always require a target
+#   SOLO_ACTIONS:   never take a target
+#   BOTH_ACTIONS:   optional target (mutual_template, solo_template)
+# ──────────────────────────────────────────────
+
+MUTUAL_ACTIONS = {
     "shoot": "{actor} shoots at {target}",
-    "shrug": "{actor} shrugs at {target}",
-    "stare": "{actor} stares at {target}",
-    "wave": "{actor} waves at {target}",
     "poke": "{actor} pokes {target}",
-    "smile": "{actor} smiles at {target}",
-    "peck": "{actor} pecks {target}",
-    "wink": "{actor} winks at {target}",
-    "blush": "{actor} blushes at {target}",
-    "smug": "{actor} looks smug at {target}",
     "tickle": "{actor} tickles {target}",
     "yeet": "{actor} yeets {target}",
     "highfive": "{actor} highfives {target}",
     "feed": "{actor} feeds {target}",
     "bite": "{actor} bites {target}",
     "nom": "{actor} noms on {target}",
-    "facepalm": "{actor} facepalms at {target}",
     "cuddle": "{actor} cuddles {target}",
     "kick": "{actor} kicks {target}",
     "hug": "{actor} hugs {target}",
-    "pat": "{actor} pats {target}",
-    "angry": "{actor} is angry at {target}",
-    "nod": "{actor} nods at {target}",
-    "nope": "{actor} says nope to {target}",
     "kiss": "{actor} kisses {target}",
-    "dance": "{actor} dances with {target}",
     "punch": "{actor} punches {target}",
     "handshake": "{actor} shakes hands with {target}",
     "slap": "{actor} slaps {target}",
-    "pout": "{actor} pouts at {target}",
     "handhold": "{actor} holds hands with {target}",
-    "thumbsup": "{actor} gives a thumbs up to {target}",
-    "laugh": "{actor} laughs at {target}"
+    "peck": "{actor} pecks {target}",
+    "carry": "{actor} carries {target}",
+    "kabedon": "{actor} kabedons {target}",
+    "baka": "{actor} calls {target} a baka",
+    "bonk": "{actor} bonks {target}",
+    "lappillow": "{actor} uses {target} as a lap pillow",
+    "blowkiss": "{actor} blows a kiss to {target}",
+    "pat": "{actor} pats {target}",
 }
 
-# Actions that do NOT require a target
-NO_TARGET_ACTIONS = {
+SOLO_ACTIONS = {
     "lurk": "{actor} lurks",
     "sleep": "{actor} sleeps",
+    "clap": "{actor} claps",
+    "shrug": "{actor} shrugs",
+    "confused": "{actor} is confused",
+    "sip": "{actor} sips",
+    "blush": "{actor} blushes",
+    "smug": "{actor} looks smug",
     "think": "{actor} thinks",
+    "wag": "{actor} wags their tail",
+    "teehee": "{actor} giggles teehee",
+    "shocked": "{actor} is shocked",
+    "bleh": "{actor} blehs",
     "bored": "{actor} is bored",
+    "nya": "{actor} says nya~",
     "yawn": "{actor} yawns",
+    "facepalm": "{actor} facepalms",
     "happy": "{actor} is happy",
+    "angry": "{actor} is angry",
+    "spin": "{actor} spins",
+    "shake": "{actor} shakes",
     "run": "{actor} runs",
-    "cry": "{actor} cries"
+    "cry": "{actor} cries",
+    "salute": "{actor} salutes",
+    "tableflip": "{actor} flips the table",
 }
 
-ACTIONS = {**TARGET_ACTIONS, **NO_TARGET_ACTIONS}
+# Each entry is a tuple: (mutual_template, solo_template)
+BOTH_ACTIONS = {
+    "stare": ("{actor} stares at {target}", "{actor} stares"),
+    "wave": ("{actor} waves at {target}", "{actor} waves"),
+    "smile": ("{actor} smiles at {target}", "{actor} smiles"),
+    "wink": ("{actor} winks at {target}", "{actor} winks"),
+    "nod": ("{actor} nods at {target}", "{actor} nods"),
+    "nope": ("{actor} says nope to {target}", "{actor} says nope"),
+    "dance": ("{actor} dances with {target}", "{actor} dances"),
+    "laugh": ("{actor} laughs at {target}", "{actor} laughs"),
+    "pout": ("{actor} pouts at {target}", "{actor} pouts"),
+    "thumbsup": ("{actor} gives a thumbs up to {target}", "{actor} gives a thumbs up"),
+}
 
 NEKOS_BASE = "https://nekos.best/api/v2/"
 
@@ -71,24 +96,38 @@ def _make_description(template: str) -> str:
     return desc[0].upper() + desc[1:] if desc else "Send a GIF"
 
 
-def _create_action_command(action: str, template: str, needs_target: bool):
-    """Create a hybrid command for a gif action."""
+def _create_action_command(action: str, template: str, target_mode: str):
+    """Create a hybrid command for a gif action.
+
+    target_mode: "required" | "none" | "optional"
+    """
     description = _make_description(template)
 
-    if needs_target:
-        async def command(self, ctx, member: Optional[str] = None):
+    if target_mode == "required":
+        async def command(self, ctx: commands.Context, member: discord.Member):
+            await self.send_action(ctx, action, member)
+
+        command = app_commands.describe(
+            member="The user to direct this action at"
+        )(command)
+    elif target_mode == "optional":
+        async def command(self, ctx: commands.Context, member: Optional[discord.Member] = None):
             await self.send_action(ctx, action, member)
 
         command = app_commands.describe(
             member="The user to direct this action at (optional)"
         )(command)
-    else:
-        async def command(self, ctx):
+    else:  # "none"
+        async def command(self, ctx: commands.Context):
             await self.send_action(ctx, action)
 
     command = app_commands.allowed_installs(guilds=True, users=True)(command)
     command = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(command)
     command.__name__ = f"{action}_command"
+    # Important: __qualname__ must NOT end with '<locals>' so that
+    # app_commands.is_inside_class() returns True, causing discord.py
+    # to skip both 'self' AND 'ctx' when extracting slash command parameters.
+    command.__qualname__ = f"Gifs.{action}_command"
 
     return commands.hybrid_command(name=action, description=description)(command)
 
@@ -101,7 +140,8 @@ class Gifs(commands.Cog):
         """Called when the cog is loaded. Register dynamic commands here
         because add_command() is not available in __init__."""
         self._register_dynamic_commands()
-        logger.info("[Gifs] Registered %d dynamic action commands", len(ACTIONS))
+        total = len(MUTUAL_ACTIONS) + len(SOLO_ACTIONS) + len(BOTH_ACTIONS)
+        logger.info("[Gifs] Registered %d dynamic action commands", total)
 
     @property
     def session(self):
@@ -109,7 +149,7 @@ class Gifs(commands.Cog):
         return get_shared_session()
 
     def _register_dynamic_commands(self):
-        """Register all action commands dynamically from the ACTIONS dict.
+        """Register all action commands dynamically from the action dicts.
 
         In discord.py 2.6+, add_command() is a Bot method, not a Cog method.
         The Cog._inject() method calls cog_load() first, then iterates
@@ -122,10 +162,13 @@ class Gifs(commands.Cog):
         """
         new_commands = []
 
-        for action, template in TARGET_ACTIONS.items():
-            new_commands.append(_create_action_command(action, template, needs_target=True))
-        for action, template in NO_TARGET_ACTIONS.items():
-            new_commands.append(_create_action_command(action, template, needs_target=False))
+        for action, template in MUTUAL_ACTIONS.items():
+            new_commands.append(_create_action_command(action, template, target_mode="required"))
+        for action, template in SOLO_ACTIONS.items():
+            new_commands.append(_create_action_command(action, template, target_mode="none"))
+        for action, (mutual_tpl, solo_tpl) in BOTH_ACTIONS.items():
+            # Use the mutual template for the description (more informative)
+            new_commands.append(_create_action_command(action, mutual_tpl, target_mode="optional"))
 
         # Add to the cog's command list (__cog_commands__ is a tuple)
         self.__cog_commands__ = self.__cog_commands__ + tuple(new_commands)
@@ -176,7 +219,7 @@ class Gifs(commands.Cog):
                     logger.error("[Gifs] Retry also failed for %s. Giving up.", url)
         return None
 
-    async def send_action(self, ctx, action: str, member: Optional[str] = None):
+    async def send_action(self, ctx, action: str, member: Optional[discord.Member] = None):
         logger.info(
             "[Gifs] send_action invoked: action='%s' author=%s guild=%s channel=%s",
             action, ctx.author, getattr(ctx.guild, "name", None),
@@ -190,7 +233,7 @@ class Gifs(commands.Cog):
         logger.debug("[Gifs] Sending embed with GIF for action='%s' URL='%s'", action, gif_url)
 
         actor = ctx.author.display_name
-        target = "you"
+        target = None
 
         # Resolve the target from the member argument (works for both prefix & slash)
         if member:
@@ -201,15 +244,23 @@ class Gifs(commands.Cog):
                     converted = await commands.MemberConverter().convert(ctx, member)
                     target = converted.mention
                 except commands.BadArgument:
-                    pass  # fall back to "you"
+                    pass  # fall back to no target
 
-        if action in NO_TARGET_ACTIONS:
-            content = ACTIONS[action].format(actor=actor)
-        else:
-            if target == "you":
-                content = (ACTIONS[action].format(actor="", target=target)).strip().capitalize()
+        # Determine which template to use based on action category
+        if action in MUTUAL_ACTIONS:
+            # Always mutual — target should be present, but fall back gracefully
+            if target:
+                content = MUTUAL_ACTIONS[action].format(actor=actor, target=target)
             else:
-                content = ACTIONS[action].format(actor=actor, target=target)
+                content = (MUTUAL_ACTIONS[action].format(actor="", target="you")).strip().capitalize()
+        elif action in SOLO_ACTIONS:
+            content = SOLO_ACTIONS[action].format(actor=actor)
+        else:  # BOTH_ACTIONS
+            mutual_tpl, solo_tpl = BOTH_ACTIONS[action]
+            if target:
+                content = mutual_tpl.format(actor=actor, target=target)
+            else:
+                content = solo_tpl.format(actor=actor)
 
         embed = discord.Embed(
             color=discord.Color.from_str("#00FFFF")
