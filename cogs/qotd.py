@@ -1,5 +1,7 @@
+import io
 import logging
 import random
+from datetime import datetime
 
 import discord
 from discord.ext import commands
@@ -341,6 +343,63 @@ class QOTD(commands.Cog):
         else:
             parts.append("Ping role: Not set")
         await ctx.send("\n".join(parts))
+
+    @commands.hybrid_command(name="exportqotd", description="Export all past QOTD questions from the QOTD channel to a text file")
+    @commands.has_permissions(administrator=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
+    @commands.guild_only()
+    async def export_qotd(self, ctx):
+        logger.info("[QOTD] exportqotd invoked by %s (guild=%s)", ctx.author, ctx.guild.name)
+        gid = ctx.guild.id
+        guild_data = self.get_guild_settings(gid)
+        ch_id = guild_data.get("channel_id")
+        ping_role_id = guild_data.get("ping_role_id")
+
+        if not ch_id:
+            await ctx.send("QOTD channel is not set for this server. Use `/setqotdchannel` first.")
+            return
+        if not ping_role_id:
+            await ctx.send("QOTD ping role is not set for this server. Use `/setqotdping` first.")
+            return
+
+        channel = self.bot.get_channel(ch_id)
+        if not channel:
+            await ctx.send("Could not find the QOTD channel.")
+            return
+
+        role = ctx.guild.get_role(ping_role_id)
+        if not role:
+            await ctx.send("Could not find the QOTD ping role.")
+            return
+
+        questions = []
+        async for message in channel.history(limit=None):
+            if role in message.role_mentions:
+                content = message.content
+                for mention in message.role_mentions:
+                    content = content.replace(mention.mention, "").strip()
+                if content:
+                    questions.append(content)
+
+        if not questions:
+            await ctx.send("No QOTD messages found in the channel.")
+            return
+
+        # Build the text file
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        lines = [
+            f"QOTD History for {ctx.guild.name}",
+            f"Exported on {now}",
+            "----------------------------------------",
+        ]
+        for i, q in enumerate(questions, 1):
+            lines.append(f"{i}. {q}")
+
+        file_content = "\n".join(lines)
+        buffer = io.BytesIO(file_content.encode("utf-8"))
+        file = discord.File(buffer, filename="qotd_history.txt")
+        await ctx.send(f"Found **{len(questions)}** QOTD question(s).", file=file)
+        logger.info("[QOTD] exportqotd exported %d questions (guild=%s)", len(questions), ctx.guild.name)
 
 
 async def setup(bot):
