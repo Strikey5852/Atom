@@ -49,7 +49,7 @@ for cog_name in ALL_COG_NAMES:
     logging.getLogger(f"cogs.{cog_name}").setLevel(level)
     logger.info("Log level for cogs.%s: %s", cog_name, logging.getLevelName(level))
 
-HEALTH_CHECK_PORT = 8000
+HEALTH_CHECK_PORT = int(os.getenv("PORT", 8000))
 _HEALTH_SERVER = None
 _HEALTH_LOCK = threading.Lock()
 
@@ -67,6 +67,8 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+
+    do_HEAD = do_GET  # Respond to HEAD requests the same way as GET
 
     def log_message(self, format, *args):
         logger.debug("Health check request: %s", format % args)
