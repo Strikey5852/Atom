@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import aiohttp
-import server
 from dotenv import load_dotenv
 
 import discord
@@ -146,9 +145,6 @@ async def load_cogs(bot):
 
 
 async def main():
-    # Start the Flask health-check server in a background thread
-    server.start()
-
     await load_cogs(bot)
     TOKEN = os.getenv("TOKEN")
     if not TOKEN:
