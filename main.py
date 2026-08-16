@@ -1,11 +1,11 @@
 import asyncio
 import logging
 import os
-import random
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import aiohttp
 from dotenv import load_dotenv
 
 import discord
@@ -49,40 +49,58 @@ for cog_name in ALL_COG_NAMES:
     logging.getLogger(f"cogs.{cog_name}").setLevel(level)
     logger.info("Log level for cogs.%s: %s", cog_name, logging.getLevelName(level))
 
-# Maximum number of consecutive connection attempts before giving up
-MAX_RETRIES = 10
-# Base delay in seconds for exponential backoff
-BASE_DELAY = 5
+HEALTH_CHECK_PORT = 8000
+_HEALTH_SERVER = None
+_HEALTH_LOCK = threading.Lock()
 
 
-async def start_bot_with_retry(token: str) -> None:
-    """Attempt to connect to Discord with exponential backoff + jitter.
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in {"/", "/health", "/healthz"}:
+            payload = b'{"status":"ok"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
 
-    Handles temporary IP bans / rate limits from Render's shared egress IPs
-    by waiting progressively longer between attempts.
-    """
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            await bot.start(token)
-            return  # Connected successfully
-        except (discord.errors.ConnectionClosed,
-                discord.errors.GatewayNotFound,
-                discord.errors.HTTPException,
-                OSError,
-                aiohttp.ClientError) as exc:
-            if attempt == MAX_RETRIES:
-                logger.error("All %d connection attempts exhausted. Giving up.", MAX_RETRIES)
-                raise
+        self.send_response(404)
+        self.end_headers()
 
-            delay = BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 2)
-            logger.warning(
-                "Connection attempt %d/%d failed: %s\nRetrying in %.1f seconds...",
-                attempt, MAX_RETRIES, exc, delay,
-            )
-            await asyncio.sleep(delay)
-        except Exception:
-            # For unexpected errors, re-raise immediately
-            raise
+    def log_message(self, format, *args):
+        logger.debug("Health check request: %s", format % args)
+
+
+def start_health_check_server() -> None:
+    global _HEALTH_SERVER
+
+    with _HEALTH_LOCK:
+        if _HEALTH_SERVER is not None:
+            return
+
+        server = ThreadingHTTPServer(("0.0.0.0", HEALTH_CHECK_PORT), HealthCheckHandler)
+        _HEALTH_SERVER = server
+
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logger.info("Health check server started on port %d", HEALTH_CHECK_PORT)
+
+
+def stop_health_check_server() -> None:
+    global _HEALTH_SERVER
+
+    with _HEALTH_LOCK:
+        if _HEALTH_SERVER is None:
+            return
+
+        server = _HEALTH_SERVER
+        _HEALTH_SERVER = None
+
+    server.shutdown()
+    server.server_close()
+    logger.info("Health check server stopped on port %d", HEALTH_CHECK_PORT)
+
 
 # Main bot entrypoint
 bot = commands.Bot(
@@ -145,15 +163,16 @@ async def load_cogs(bot):
 
 
 async def main():
+    start_health_check_server()
     await load_cogs(bot)
     TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         raise RuntimeError("TOKEN environment variable is not set")
 
     try:
-        await start_bot_with_retry(TOKEN)
+        await bot.start(TOKEN)
     finally:
-        # Clean up database and shared session
+        stop_health_check_server()
         await close_database()
         await close_shared_session()
 
