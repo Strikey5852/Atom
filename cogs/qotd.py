@@ -241,19 +241,22 @@ class QOTD(commands.Cog):
             return
 
         # Otherwise, chunk into multiple messages under the Discord limit
-        total_pages = 1
         current_chunk = []
         current_len = 0
+        header_sent = False
         header = "**Current Questions for this server:**"
 
         for line in lines:
             line_len = len(line) + 1  # +1 for newline
             if current_len + line_len > 1800 and current_chunk:
                 page_text = "\n".join(current_chunk)
-                await ctx.send(f"{header}\n{page_text}\n\n*Page {total_pages}*")
+                if header_sent:
+                    await ctx.send(f"{page_text}")
+                else:
+                    await ctx.send(f"{header}\n{page_text}")
+                    header_sent = True
                 current_chunk = [line]
                 current_len = line_len
-                total_pages += 1
             else:
                 current_chunk.append(line)
                 current_len += line_len
@@ -261,10 +264,9 @@ class QOTD(commands.Cog):
         # Send the final chunk
         if current_chunk:
             page_text = "\n".join(current_chunk)
-            footer = f"\n\n*Page {total_pages}*"
-            await ctx.send(f"{header}\n{page_text}{footer}")
+            await ctx.send(f"{page_text}")
 
-        logger.info("[QOTD] listqotd displayed %d questions in %d pages (guild=%s)", len(questions), total_pages, ctx.guild.name)
+        logger.info("[QOTD] listqotd displayed %d questions in %d pages (guild=%s)", len(questions), ctx.guild.name)
 
     @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
     @commands.has_permissions(administrator=True)
