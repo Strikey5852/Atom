@@ -1,4 +1,4 @@
-"""Shared aiohttp session for the bot."""
+"""Shared aiohttp session used for outbound HTTP calls."""
 import aiohttp
 
 _session: aiohttp.ClientSession | None = None

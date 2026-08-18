@@ -15,21 +15,10 @@ from discord.ext import commands
 from database import init_database, close_database
 from shared_http import close_shared_session
 
-# Load environment variables from .env file
+# Load local environment variables.
 load_dotenv()
 
-# ──────────────────────────────────────────────
-# Logging Configuration
-# ──────────────────────────────────────────────
-# Global defaults, overridable via environment variables:
-#   COG_LOG_LEVEL=<level>              — default level for ALL cog loggers (DEBUG/INFO/WARNING/ERROR)
-#   COG_LOG_LEVEL_<COG>=<level>        — per-cog override (e.g. COG_LOG_LEVEL_GIFS=DEBUG)
-#
-# Examples:
-#   COG_LOG_LEVEL=WARNING              # Quiet globally
-#   COG_LOG_LEVEL_GIFS=DEBUG           # Verbose only for the gifs cog
-#   COG_LOG_LEVEL_TRAP=ERROR           # Only errors from the trap cog
-
+# Default logging level can be overridden per cog with environment variables.
 DEFAULT_COG_LOG_LEVEL = os.getenv("COG_LOG_LEVEL", "INFO").upper()
 ALL_COG_NAMES = ["cats", "dice", "gifs", "qotd", "sticky", "trap"]
 
@@ -41,7 +30,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("main")
 
-# Apply per-cog log levels
+# Apply per-cog log levels if they are set.
 for cog_name in ALL_COG_NAMES:
     env_key = f"COG_LOG_LEVEL_{cog_name.upper()}"
     level_name = os.getenv(env_key, DEFAULT_COG_LOG_LEVEL).upper()
@@ -104,16 +93,14 @@ def stop_health_check_server() -> None:
     logger.info("Health check server stopped on port %d", HEALTH_CHECK_PORT)
 
 
-# Main bot entrypoint
 bot = commands.Bot(
-    command_prefix=">",  # Prefix for non-slash (text) commands
+    command_prefix=">",
     intents=discord.Intents.default() | discord.Intents(message_content=True),
 )
 
 
 @bot.event
 async def on_ready():
-    # Initialize database
     try:
         await init_database()
         logger.info("Database initialized successfully")
@@ -123,11 +110,9 @@ async def on_ready():
 
     logger.info("Logged in as %s", bot.user)
 
-    # Sync commands after bot is ready
     try:
         synced = await bot.tree.sync()
         logger.info("Synced %d commands", len(synced))
-        # Print out the names of synced commands for verification
         logger.info("Synced command names: %s", [cmd.name for cmd in synced])
     except Exception as e:
         logger.error("Error syncing commands: %s", e)
@@ -137,11 +122,10 @@ async def on_ready():
 @app_commands.allowed_installs(guilds=True, users=True)
 @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
 async def ping(ctx: commands.Context):
-    # Slash command to report latency
     start = time.perf_counter()
     msg = await ctx.send("Pinging...")
     end = time.perf_counter()
-    round_trip = (end - start) * 1000  # ms
+    round_trip = (end - start) * 1000
     await msg.edit(
         content=(
             f"Pong!\n"

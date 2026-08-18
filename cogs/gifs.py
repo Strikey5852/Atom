@@ -11,12 +11,7 @@ from shared_http import get_shared_session
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────
-# Action definitions — three categories:
-#   MUTUAL_ACTIONS: optional target (falls back to "you")
-#   SOLO_ACTIONS:   never take a target
-#   BOTH_ACTIONS:   optional target (mutual_template, solo_template)
-# ──────────────────────────────────────────────
+# The action sets below map names to message templates.
 
 MUTUAL_ACTIONS = {
     "shoot": "{actor} shoots at {target}",
@@ -73,7 +68,6 @@ SOLO_ACTIONS = {
     "tableflip": "{actor} flips the table",
 }
 
-# Each entry is a tuple: (mutual_template, solo_template)
 BOTH_ACTIONS = {
     "stare": ("{actor} stares at {target}", "{actor} stares"),
     "wave": ("{actor} waves at {target}", "{actor} waves"),
@@ -89,9 +83,7 @@ BOTH_ACTIONS = {
 
 NEKOS_BASE = "https://nekos.best/api/v2/"
 
-# Kaomoji descriptions shown in the Discord command picker
 DESCRIPTIONS = {
-    # Mutual actions
     "shoot": "( ・_・)ノ⌒●~*",
     "poke": "( ・_・)σ",
     "tickle": "(く・ω・)く",
@@ -116,7 +108,6 @@ DESCRIPTIONS = {
     "lappillow": "(◦′ ω ‵◦)",
     "blowkiss": "( ˘ ³˘)ﾉ",
     "pat": "(ｏ・_・)ノ(ᴗ_ᴗ。)",
-    # Solo actions
     "lurk": "(┬┴┬┴┤•_•)",
     "sleep": "( -_•) zZZ",
     "clap": "( • ω • )888",
@@ -142,7 +133,6 @@ DESCRIPTIONS = {
     "cry": "(╥﹏╥)",
     "salute": "(￣^￣)ゞ",
     "tableflip": "(╯°□°）╯︵ ┻━┻",
-    # Both actions (mutual variant)
     "stare": "(¬_¬)",
     "wave": "(￣▽￣)ノ",
     "smile": "( ^_^ )",
@@ -176,9 +166,7 @@ def _create_action_command(action: str, target_mode: str):
     command = app_commands.allowed_installs(guilds=True, users=True)(command)
     command = app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)(command)
     command.__name__ = f"{action}_command"
-    # Important: __qualname__ must NOT end with '<locals>' so that
-    # app_commands.is_inside_class() returns True, causing discord.py
-    # to skip both 'self' AND 'ctx' when extracting slash command parameters.
+    # Keep the qualname on the class so discord.py treats this as a method, not a nested function.
     command.__qualname__ = f"Gifs.{action}_command"
 
     return commands.hybrid_command(
@@ -192,8 +180,7 @@ class Gifs(commands.Cog):
         self.bot = bot
 
     async def cog_load(self):
-        """Called when the cog is loaded. Register dynamic commands here
-        because add_command() is not available in __init__."""
+        """Register the generated action commands when the cog loads."""
         self._register_dynamic_commands()
         total = len(MUTUAL_ACTIONS) + len(SOLO_ACTIONS) + len(BOTH_ACTIONS)
         logger.info("[Gifs] Registered %d dynamic action commands", total)
@@ -204,17 +191,7 @@ class Gifs(commands.Cog):
         return get_shared_session()
 
     def _register_dynamic_commands(self):
-        """Register all action commands dynamically from the action dicts.
-
-        In discord.py 2.6+, add_command() is a Bot method, not a Cog method.
-        The Cog._inject() method calls cog_load() first, then iterates
-        __cog_commands__ to register commands with the bot. So we add the
-        dynamically created commands to the cog's __cog_commands__ tuple here.
-
-        Note: We do NOT add to __cog_app_commands__ because bot.add_command()
-        for hybrid commands already registers the app_command to the tree.
-        Adding to both would cause CommandAlreadyRegistered errors.
-        """
+        """Register the generated action commands on the cog itself."""
         new_commands = []
 
         for action in MUTUAL_ACTIONS:
@@ -224,7 +201,6 @@ class Gifs(commands.Cog):
         for action in BOTH_ACTIONS:
             new_commands.append(_create_action_command(action, target_mode="optional"))
 
-        # Add to the cog's command list (__cog_commands__ is a tuple)
         self.__cog_commands__ = self.__cog_commands__ + tuple(new_commands)
 
     async def fetch_gif(self, action: str) -> str:
@@ -300,9 +276,7 @@ class Gifs(commands.Cog):
                 except commands.BadArgument:
                     pass  # fall back to no target
 
-        # Determine which template to use based on action category
         if action in MUTUAL_ACTIONS:
-            # Mututal action — target defaults to "you" when not provided
             if target:
                 content = MUTUAL_ACTIONS[action].format(actor=actor, target=target)
             else:

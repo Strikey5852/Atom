@@ -1,7 +1,4 @@
-"""
-GitHub Gist-based database layer for the Discord bot.
-Provides persistent storage using GitHub Gists with local caching.
-"""
+"""Cache-backed GitHub Gist storage for the bot's persistent settings."""
 
 import asyncio
 import json
@@ -14,7 +11,6 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-# GitHub API rate-limit responses
 RATE_LIMIT_STATUSES = {403, 429}
 
 
@@ -32,9 +28,8 @@ class GistDatabase:
         self._auto_create = os.getenv("GIST_AUTO_CREATE", "true").lower() == "true"
         self._pending_saves: dict[str, asyncio.Task] = {}
 
-        # Cache settings
-        self._cache_ttl = 60  # seconds
-        self._save_debounce = 2.0  # seconds
+        self._cache_ttl = 60
+        self._save_debounce = 2.0
 
         if not self.token:
             raise ValueError("GITHUB_TOKEN environment variable is required")
@@ -53,7 +48,6 @@ class GistDatabase:
 
     async def close(self):
         """Close the aiohttp session and cancel pending saves."""
-        # Cancel any pending debounced saves
         for task in self._pending_saves.values():
             task.cancel()
         self._pending_saves.clear()
@@ -69,7 +63,6 @@ class GistDatabase:
 
             try:
                 if self.gist_id:
-                    # Try to fetch existing gist
                     success = await self._fetch_gist()
                     if success:
                         self._initialized = True
@@ -80,11 +73,9 @@ class GistDatabase:
                             f"Failed to fetch gist with ID: {self.gist_id}"
                         )
 
-                # Create new gist if auto_create is enabled
                 if self._auto_create:
                     self.gist_id = await self._create_gist()
                     if self.gist_id:
-                        # Update .env file with new gist ID
                         self._update_env_file()
                         self._initialized = True
                         logger.info("Created new gist with ID: %s", self.gist_id)
@@ -111,7 +102,6 @@ class GistDatabase:
                     data = await response.json()
                     files = data.get("files", {})
 
-                    # Parse each file in the gist
                     for filename, file_data in files.items():
                         content = file_data.get("content", "{}")
                         try:
@@ -167,7 +157,6 @@ class GistDatabase:
                     data = await response.json()
                     gist_id = data.get("id")
 
-                    # Initialize cache with empty data
                     for filename in payload["files"]:
                         self._cache[filename] = {}
                         self._cache_timestamps[filename] = time.time()
@@ -199,7 +188,6 @@ class GistDatabase:
             with open(env_path, "r") as f:
                 lines = f.readlines()
 
-        # Update or add GIST_ID
         gist_line_found = False
         for i, line in enumerate(lines):
             if line.startswith("GIST_ID="):
@@ -288,7 +276,6 @@ class GistDatabase:
 
     async def _debounced_save(self, filename: str):
         """Schedule a debounced save for a file."""
-        # Cancel any existing pending save for this file
         existing = self._pending_saves.get(filename)
         if existing and not existing.done():
             existing.cancel()
@@ -313,10 +300,8 @@ class GistDatabase:
         if not self._initialized:
             await self.initialize()
 
-        # Use cache if valid, otherwise fetch fresh
         if not self._is_cache_valid(filename):
             async with self._lock:
-                # Re-check under lock (another coroutine may have refreshed)
                 if not self._is_cache_valid(filename):
                     await self._fetch_gist()
 
@@ -347,10 +332,8 @@ class GistDatabase:
         if not self._initialized:
             await self.initialize()
 
-        # Use cache if valid, otherwise fetch fresh
         if not self._is_cache_valid(filename):
             async with self._lock:
-                # Re-check under lock (another coroutine may have refreshed)
                 if not self._is_cache_valid(filename):
                     await self._fetch_gist()
 
@@ -388,7 +371,6 @@ class GistDatabase:
 
     async def flush(self):
         """Force-flush all pending debounced saves."""
-        # Take a snapshot of pending tasks
         tasks = list(self._pending_saves.values())
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)

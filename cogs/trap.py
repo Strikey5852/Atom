@@ -10,14 +10,9 @@ from database import get_database
 
 logger = logging.getLogger(__name__)
 
-
-# Default configuration values
 DEFAULT_THRESHOLD = 5
-DEFAULT_TIME_WINDOW = 10  # seconds
-TIMEOUT_DURATION = 86400  # 24 hours in seconds
-
-# Maximum number of message entries to keep per user in the in-memory log.
-# Prevents unbounded memory growth for users who send many distinct messages.
+DEFAULT_TIME_WINDOW = 10
+TIMEOUT_DURATION = 86400
 MAX_LOG_ENTRIES_PER_USER = 100
 
 
@@ -29,19 +24,9 @@ class Trap(commands.Cog):
         self.db = get_database()
         self.filename = "trap.json"
 
-        # Persistent settings per guild: {guild_id: {enabled, threshold, time_window, log_channel_id}}
         self.trap_config: dict[str, dict[str, Any]] = {}
-
-        # In-memory message log for repetition detection.
-        # {guild_id: {user_id: [(timestamp, content, channel_id, message_id), ...]}}
         self._message_log: dict[int, dict[int, list[tuple[float, str, int, int]]]] = {}
-
-        # Set of user_ids currently being processed (prevents duplicate concurrent work)
         self._pending_actions: set[int] = set()
-
-    # ──────────────────────────────────────────────
-    # Persistence
-    # ──────────────────────────────────────────────
 
     async def load_config(self) -> dict:
         """Load trap config from the database."""
@@ -65,9 +50,6 @@ class Trap(commands.Cog):
         except Exception as e:
             logger.exception("[Trap] Error saving config: %s", e)
 
-    # ──────────────────────────────────────────────
-    # Helpers
-    # ──────────────────────────────────────────────
 
     def _get_guild_config(self, guild_id: str) -> dict[str, Any]:
         return self.trap_config.get(guild_id, {
@@ -106,7 +88,6 @@ class Trap(commands.Cog):
         """Add a message entry to the log for a user, trimming to the cap."""
         log = self._message_log.setdefault(guild_id, {}).setdefault(user_id, [])
         log.append(entry)
-        # Trim oldest entries if we exceed the cap
         if len(log) > MAX_LOG_ENTRIES_PER_USER:
             del log[: len(log) - MAX_LOG_ENTRIES_PER_USER]
 
@@ -245,9 +226,6 @@ class Trap(commands.Cog):
         except Exception as e:
             logger.exception("[Trap] Failed to send log: %s", e)
 
-    # ──────────────────────────────────────────────
-    # Listeners
-    # ──────────────────────────────────────────────
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -331,9 +309,6 @@ class Trap(commands.Cog):
                 self._message_log.get(guild_id_int, {}).pop(user_id, None)
                 self._pending_actions.discard(user_id)
 
-    # ──────────────────────────────────────────────
-    # Commands
-    # ──────────────────────────────────────────────
 
     @commands.hybrid_command(
         name="trap",
