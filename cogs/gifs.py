@@ -38,6 +38,10 @@ MUTUAL_ACTIONS = {
     "lappillow": "{actor} uses {target} as a lap pillow",
     "blowkiss": "{actor} blows a kiss to {target}",
     "pat": "{actor} pats {target}",
+    "lick": "{actor} licks {target}",
+    "nuzzle": "{actor} nuzzles {target}",
+    "brofist": "{actor} brofists {target}",
+    "pinch": "{actor} pinches {target}",
 }
 
 SOLO_ACTIONS = {
@@ -66,6 +70,27 @@ SOLO_ACTIONS = {
     "cry": "{actor} cries",
     "salute": "{actor} salutes",
     "tableflip": "{actor} flips the table",
+    "celebrate": "{actor} celebrates",
+    "cool": "{actor} is cool",
+    "drool": "{actor} drools",
+    "evillaugh": "{actor} evil laughs",
+    "headbang": "{actor} headbangs",
+    "nervous": "{actor} is nervous",
+    "nosebleed": "{actor} has a nosebleed",
+    "peek": "{actor} peeks",
+    "sad": "{actor} is sad",
+    "scared": "{actor} is scared",
+    "shout": "{actor} shouts",
+    "shy": "{actor} is shy",
+    "sigh": "{actor} sighs",
+    "sing": "{actor} sings",
+    "slowclap": "{actor} slow claps",
+    "sneeze": "{actor} sneezes",
+    "stop": "{actor} signals stop",
+    "sweat": "{actor} sweats",
+    "tired": "{actor} is tired",
+    "woah": "{actor} says woah",
+    "yay": "{actor} yays",
 }
 
 BOTH_ACTIONS = {
@@ -79,9 +104,24 @@ BOTH_ACTIONS = {
     "laugh": ("{actor} laughs at {target}", "{actor} laughs"),
     "pout": ("{actor} pouts at {target}", "{actor} pouts"),
     "thumbsup": ("{actor} gives a thumbs up to {target}", "{actor} gives a thumbs up"),
+    "angrystare": ("{actor} angrily stares at {target}", "{actor} angrily stares"),
+    "love": ("{actor} gives love to {target}", "{actor} gives love"),
+    "sorry": ("{actor} apologizes to {target}", "{actor} apologizes"),
+    "cheers": ("{actor} cheers with {target}", "{actor} cheers"),
 }
 
 NEKOS_BASE = "https://nekos.best/api/v2/"
+OTAKUGIFS_BASE = "https://api.otakugifs.xyz/gif?reaction={action}&format=gif"
+
+ALT_ACTIONS = {
+    "lick", "nuzzle", "brofist", "pinch",
+    "angrystare", "love", "sorry", "cheers",
+    "celebrate", "cool", "drool", "evillaugh",
+    "headbang", "nervous", "nosebleed", "peek",
+    "sad", "scared", "shout", "shy", "sigh",
+    "sing", "slowclap", "sneeze", "stop", "sweat",
+    "tired", "woah", "yay",
+}
 
 DESCRIPTIONS = {
     "shoot": "( ・_・)ノ⌒●~*",
@@ -100,11 +140,11 @@ DESCRIPTIONS = {
     "handshake": "(・_・)人(・_・)",
     "slap": "( '= ')ノ)- -)",
     "handhold": "(⁄ ⁄•⁄ω⁄•⁄ ⁄)vv(⁄ ⁄•⁄ω⁄•⁄ ⁄)",
-    "peck": "( ˘ ³˘)♥",
+    "peck": "( ˘ ³˘)♡",
     "carry": "(⊃｡•́‿•̀｡)⊃",
     "kabedon": "|(•̀ᴗ•́)✧",
     "baka": "(ノ°益°)ノ",
-    "bonk": "( ・ω・)⚯",
+    "bonk": "( ・_・)ノ☆(>_<)",
     "lappillow": "(◦′ ω ‵◦)",
     "blowkiss": "( ˘ ³˘)ﾉ",
     "pat": "(ｏ・_・)ノ(ᴗ_ᴗ。)",
@@ -120,7 +160,7 @@ DESCRIPTIONS = {
     "wag": "(＾• ω •＾)",
     "teehee": "( > ▽ < )",
     "shocked": "(⊙_⊙)",
-    "bleh": "( > 👅 < )",
+    "bleh": "( ＞ｐ＜ )",
     "bored": "(￣～￣;)",
     "nya": "(=^･ω･^=)",
     "yawn": "(´O｀)",
@@ -138,11 +178,40 @@ DESCRIPTIONS = {
     "smile": "( ^_^ )",
     "wink": "(＾‿＾)",
     "nod": "( ・_・)(_ _)",
-    "nope": "( ─_─ )☝️",
+    "nope": "(乂 ─_─ )",
     "dance": "♪(┌・。・)┌",
     "laugh": "(≧▽≦)",
-    "pout": "(￣ヘ￣;)",
+    "pout": "( ￣ 3￣)",
     "thumbsup": "(b ᵔ▽ᵔ)b",
+    "lick": "(^q^)",
+    "nuzzle": "(´ ∀ ` *)",
+    "brofist": "( ・ω・)=っo",
+    "pinch": "( ˘ ⌣ ˘)σ",
+    "angrystare": "(▼皿▼#)",
+    "love": "(♡´∀`♡)",
+    "sorry": "(シ_ _)シ",
+    "cheers": "( ^^)／▽ ▽＼(^^ )",
+    "celebrate": "( ﾉ^ω^)ﾉﾟ",
+    "cool": "(•̀ᴗ•́)و",
+    "drool": "(￣﹃￣)",
+    "evillaugh": "(｀∀´)Ψ",
+    "headbang": "(ﾉ≧∀≦)ﾉ",
+    "nervous": "(´•ω•̥`)",
+    "nosebleed": "(＞人＜；)",
+    "peek": "|ω•́`)",
+    "sad": "(´；ω；`)",
+    "scared": "(>_<,,)",
+    "shout": "(ﾟДﾟ)ﾉ",
+    "shy": "(/ω＼)",
+    "sigh": "(´-ω-`)",
+    "sing": "(♪´∀`)ﾉ",
+    "slowclap": "( ￣ω￣) 8 8 8",
+    "sneeze": "(>з<)",
+    "stop": "(乂｀д´)",
+    "sweat": "(;´Д`)",
+    "tired": "(￣ω￣;)",
+    "woah": "(°ω°)",
+    "yay": "＼(^ω^＼)"
 }
 
 def _create_action_command(action: str, target_mode: str):
@@ -204,8 +273,10 @@ class Gifs(commands.Cog):
         self.__cog_commands__ = self.__cog_commands__ + tuple(new_commands)
 
     async def fetch_gif(self, action: str) -> str:
-        """Fetch a random GIF URL for the given action from nekos.best"""
-        url = f"{NEKOS_BASE}{action}"
+        if action in ALT_ACTIONS:
+            url = OTAKUGIFS_BASE.format(action=action)
+        else:
+            url = f"{NEKOS_BASE}{action}"
         logger.info("[Gifs] fetch_gif called for action='%s' URL='%s'", action, url)
 
         for attempt in (1, 2):
@@ -222,20 +293,31 @@ class Gifs(commands.Cog):
                         )
                         return None
                     data = await resp.json()
-                    results = data.get("results", [])
-                    if not results:
-                        logger.warning(
-                            "[Gifs] Attempt %d: 200 OK but 'results' is empty/missing. Raw keys: %s",
-                            attempt, list(data.keys()),
-                        )
-                        return None
-                    gif_url = results[0].get("url")
-                    if not gif_url:
-                        logger.warning(
-                            "[Gifs] Attempt %d: 'results[0]' has no 'url'. Result keys: %s",
-                            attempt, list(results[0].keys()),
-                        )
-                        return None
+                    if action in ALT_ACTIONS:
+                        # otakugifs returns {"url": "..."}
+                        gif_url = data.get("url")
+                        if not gif_url:
+                            logger.warning(
+                                "[Gifs] Attempt %d: 200 OK but no 'url'. Raw keys: %s",
+                                attempt, list(data.keys()),
+                            )
+                            return None
+                    else:
+                        # nekos.best returns {"results": [{"url": "..."}]}
+                        results = data.get("results", [])
+                        if not results:
+                            logger.warning(
+                                "[Gifs] Attempt %d: 200 OK but 'results' is empty/missing. Raw keys: %s",
+                                attempt, list(data.keys()),
+                            )
+                            return None
+                        gif_url = results[0].get("url")
+                        if not gif_url:
+                            logger.warning(
+                                "[Gifs] Attempt %d: 'results[0]' has no 'url'. Result keys: %s",
+                                attempt, list(results[0].keys()),
+                            )
+                            return None
                     logger.info("[Gifs] Attempt %d: Got GIF URL: %s", attempt, gif_url)
                     return gif_url
             except (aiohttp.ClientError, asyncio.TimeoutError, IndexError, KeyError) as exc:
