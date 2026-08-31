@@ -120,7 +120,21 @@ class Cats(commands.Cog):
                 logger.warning("[Cats] cat fetch failed: HTTP %d", resp.status)
                 await ctx.send("Couldn't fetch a cat pic right now ;-;", ephemeral=True)
 
-    @commands.hybrid_command(name="setcatchannel", description="Set the channel where hourly cat pictures will be posted")
+    @commands.hybrid_group(
+        name="catconfig",
+        description="Configure the hourly cat picture features for this server.",
+    )
+    @commands.has_permissions(manage_guild=True)
+    @app_commands.allowed_installs(guilds=True, users=False)
+    @commands.guild_only()
+    async def catconfig(self, ctx):
+        """Configure cat settings."""
+        await ctx.send("Cat config commands: `setchannel`, `info`.")
+
+    @catconfig.command(
+        name="setchannel",
+        description="Set the channel where hourly cat pictures will be posted",
+    )
     @commands.has_permissions(manage_guild=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -130,7 +144,7 @@ class Cats(commands.Cog):
         await self.save_settings()
         await ctx.send(f"Cat pictures will now be posted in {channel.mention}")
 
-    @commands.hybrid_command(name="catinfo", description="Show the cat channel settings for this server")
+    @catconfig.command(name="info", description="Show the cat channel settings for this server")
     @commands.has_permissions(manage_guild=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()

@@ -310,9 +310,10 @@ class Trap(commands.Cog):
                 self._pending_actions.discard(user_id)
 
 
-    @commands.hybrid_command(
+    @commands.hybrid_group(
         name="trap",
         description="Enable or disable the spam repetition trap for this server.",
+        fallback="toggle",
     )
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
@@ -327,8 +328,8 @@ class Trap(commands.Cog):
         logger.info("[Trap] %s toggled trap to %s (guild=%s)", ctx.author, status, ctx.guild.name)
         await ctx.send(f"Spam repetition trap is now **{status}**.")
 
-    @commands.hybrid_command(
-        name="trapset",
+    @trap.command(
+        name="set",
         description="Configure the spam repetition detection threshold and time window.",
     )
     @commands.has_permissions(administrator=True)
@@ -359,8 +360,8 @@ class Trap(commands.Cog):
             f"Trap configured: **{threshold}** identical messages in **{time_window}** seconds."
         )
 
-    @commands.hybrid_command(
-        name="traplog",
+    @trap.command(
+        name="log",
         description="Set the channel where trap timeout notifications are posted.",
     )
     @commands.has_permissions(administrator=True)

@@ -181,7 +181,18 @@ class QOTD(commands.Cog):
             self.scheduler.start()
             logger.info("[QOTD] Scheduler started (daily 8:00 PM IST).")
 
-    @commands.hybrid_command(name="addqotd", description="Add question(s) to the QOTD list. (Seperate by newlines; use \\n for slash commands.)")
+    @commands.hybrid_group(
+        name="qotd",
+        description="Manage QOTD (Question of the Day) for this server.",
+    )
+    @commands.guild_only()
+    @app_commands.allowed_installs(guilds=True, users=False)
+    @app_commands.allowed_contexts(guilds=True, private_channels=True, dms=False)
+    async def qotd(self, ctx):
+        """QOTD commands: add, remove, list, now, setchannel, setwarn, setping, info, export."""
+        await ctx.send("QOTD commands: `add`, `remove`, `list`, `now`, `setchannel`, `setwarn`, `setping`, `info`, `export`.")
+
+    @qotd.command(name="add", description="Add question(s) to the QOTD list.")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -202,7 +213,7 @@ class QOTD(commands.Cog):
         display = "\n".join(f"{i+1}. {q}" for i, q in enumerate(parts))
         await ctx.send(f"Added {len(parts)} question(s) to this server:\n{display}")
 
-    @commands.hybrid_command(name="removeqotd", description="Remove a question by its number (see /listqotd)")
+    @qotd.command(name="remove", description="Remove a question by its number (see /qotd list)")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -219,7 +230,7 @@ class QOTD(commands.Cog):
         logger.info("[QOTD] Removed question #%d for guild=%s", number, ctx.guild.name)
         await ctx.send(f"Removed question #{number}: `{removed_question}` from this server")
 
-    @commands.hybrid_command(name="listqotd", description="Show all current questions")
+    @qotd.command(name="list", description="Show all current questions")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -268,7 +279,7 @@ class QOTD(commands.Cog):
 
         logger.info("[QOTD] listqotd displayed %d questions in %d pages (guild=%s)", len(questions), ctx.guild.name)
 
-    @commands.hybrid_command(name="qotdnow", description="Manually post a random question now")
+    @qotd.command(name="now", description="Manually post a random question now")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -280,7 +291,7 @@ class QOTD(commands.Cog):
         else:
             await ctx.send("No available question or QOTD channel not set")
 
-    @commands.hybrid_command(name="setqotdchannel", description="Set the channel where QOTD will be posted for this server")
+    @qotd.command(name="setchannel", description="Set the channel where QOTD will be posted for this server")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -290,7 +301,7 @@ class QOTD(commands.Cog):
         await self.set_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD channel set to {channel.mention}")
 
-    @commands.hybrid_command(name="setqotdwarn", description="Set the channel where QOTD warnings will be posted for this server")
+    @qotd.command(name="setwarn", description="Set the channel where QOTD warnings will be posted for this server")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -300,7 +311,7 @@ class QOTD(commands.Cog):
         await self.set_warning_channel_for_guild(ctx.guild.id, channel.id)
         await ctx.send(f"QOTD warning channel set to {channel.mention}")
 
-    @commands.hybrid_command(name="setqotdping", description="Set a role to ping when posting QOTD")
+    @qotd.command(name="setping", description="Set a role to ping when posting QOTD")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -317,7 +328,7 @@ class QOTD(commands.Cog):
 
         await ctx.send(f"QOTD will now ping {role.mention}")
 
-    @commands.hybrid_command(name="qotdinfo", description="Show the QOTD settings for this server")
+    @qotd.command(name="info", description="Show the QOTD settings for this server")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -346,7 +357,7 @@ class QOTD(commands.Cog):
             parts.append("Ping role: Not set")
         await ctx.send("\n".join(parts))
 
-    @commands.hybrid_command(name="exportqotd", description="Export all past QOTD questions from the QOTD channel to a text file")
+    @qotd.command(name="export", description="Export all past QOTD questions from the QOTD channel to a text file")
     @commands.has_permissions(administrator=True)
     @app_commands.allowed_installs(guilds=True, users=False)
     @commands.guild_only()
@@ -358,10 +369,10 @@ class QOTD(commands.Cog):
         ping_role_id = guild_data.get("ping_role_id")
 
         if not ch_id:
-            await ctx.send("QOTD channel is not set for this server. Use `/setqotdchannel` first.")
+            await ctx.send("QOTD channel is not set for this server. Use `/qotd setchannel` first.")
             return
         if not ping_role_id:
-            await ctx.send("QOTD ping role is not set for this server. Use `/setqotdping` first.")
+            await ctx.send("QOTD ping role is not set for this server. Use `/qotd setping` first.")
             return
 
         channel = self.bot.get_channel(ch_id)

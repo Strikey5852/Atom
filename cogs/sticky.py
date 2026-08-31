@@ -113,8 +113,19 @@ class StickyMessage(commands.Cog):
         # Load stickies from database
         await self.load_all_stickies()
 
-    @commands.hybrid_command(
-        name="setsticky", description="Set a sticky message in a specific channel."
+    @commands.hybrid_group(
+        name="sticky",
+        description="Manage sticky messages in this server.",
+    )
+    @commands.guild_only()
+    @app_commands.allowed_installs(guilds=True, users=False)
+    @app_commands.allowed_contexts(guilds=True, private_channels=True, dms=False)
+    async def sticky(self, ctx: commands.Context):
+        """Manage sticky messages."""
+        await ctx.send("Sticky commands: `set`, `remove`, `list`. See `/sticky` for usage.")
+
+    @sticky.command(
+        name="set", description="Set a sticky message in a specific channel."
     )
     @app_commands.describe(
         channel="The channel to set the sticky message in.",
@@ -165,8 +176,8 @@ class StickyMessage(commands.Cog):
         )
         await ctx.send(f"Sticky message set in {channel.mention}")
 
-    @commands.hybrid_command(
-        name="removesticky",
+    @sticky.command(
+        name="remove",
         description="Remove the sticky message from a specific channel.",
     )
     @app_commands.describe(channel="The channel to remove the sticky message from.")
@@ -203,8 +214,8 @@ class StickyMessage(commands.Cog):
         )
         await ctx.send(f"Removed sticky message from {channel.mention}")
 
-    @commands.hybrid_command(
-        name="liststickies", description="Show all sticky messages in this server."
+    @sticky.command(
+        name="list", description="Show all sticky messages in this server."
     )
     @commands.has_permissions(manage_messages=True)
     @app_commands.allowed_installs(guilds=True, users=False)
