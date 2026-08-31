@@ -91,6 +91,14 @@ class Trap(commands.Cog):
         if len(log) > MAX_LOG_ENTRIES_PER_USER:
             del log[: len(log) - MAX_LOG_ENTRIES_PER_USER]
 
+    def _prune_message_log(self, guild_id: int, user_id: int, time_window: float):
+        """Remove log entries older than the configured time window."""
+        now = time.time()
+        log = self._message_log.get(guild_id, {}).get(user_id, [])
+        self._message_log[guild_id][user_id] = [
+            entry for entry in log if now - entry[0] <= time_window
+        ]
+
     async def _purge_user_messages(
         self,
         guild: discord.Guild,
