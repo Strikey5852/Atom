@@ -276,6 +276,15 @@ class Trap(commands.Cog):
         matching = [entry for entry in tracked if entry[1] == signature]
 
         if len(matching) >= threshold:
+            # Only the repeats spread across two or more channels count as a trap.
+            # Repetition confined to a single channel never triggers.
+            channels_hit = {entry[2] for entry in matching}
+            if len(channels_hit) < 2:
+                logger.debug(
+                    "[Trap] Ignoring %d repeats from %s (%s) — all in one channel (%s)",
+                    len(matching), user, user_id, next(iter(channels_hit), None),
+                )
+                return
             if user_id in self._pending_actions:
                 return
             self._pending_actions.add(user_id)
